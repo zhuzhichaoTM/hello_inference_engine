@@ -1,0 +1,135 @@
+===== MODEL: B8-iq4xs-imat-embdQ8 =====
+
+--- PROMPT 1: 用一句话解释什么是机器学习。 ---
+
+
+Loading model... |-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/- 
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b9962-07d937828
+model      : ./quant_verification/models/B8-iq4xs-imat-embdQ8.gguf
+ftype      : IQ4_XS - 4.25 bpw
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> 用一句话解释什么是机器学习。
+机器学习是让计算机利用数据进行学习，从而实现自动优化和改进，无需明确编程指令。
+
+[ Prompt: 10.9 t/s | Generation: 5.1 t/s ]
+
+
+Exiting...
+
+
+--- PROMPT 2: 写一个 Python 函数，判断一个整数是否为素数。 ---
+
+
+Loading model... |-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\| 
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b9962-07d937828
+model      : ./quant_verification/models/B8-iq4xs-imat-embdQ8.gguf
+ftype      : IQ4_XS - 4.25 bpw
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> 写一个 Python 函数，判断一个整数是否为素数。
+当然可以！以下是一个简单的 Python 函数，用于判断一个整数是否为素数：
+
+```python
+def is_prime(n):
+    if n <= 1:
+        return False
+    if n <= 3:
+        return True
+    if n % 2 == 0 or n % 3 == 0:
+        return False
+    i = 5
+    while i * i <= n:
+        if n % i == 0 or n % (i + 2) == 0:
+            return False
+        i += 6
+    return True
+
+# 测试函数
+print(is_prime(11))  # 应该返回 True
+print(is_prime(15))  # 应该返回 False
+```
+
+这个函数
+
+[ Prompt: 13.7 t/s | Generation: 4.8 t/s ]
+
+
+Exiting...
+
+
+--- PROMPT 3: 如果 3 个苹果 5 元，那么 12 个苹果多少钱？请给出计算过程。 ---
+
+
+Loading model... |-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/ 
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b9962-07d937828
+model      : ./quant_verification/models/B8-iq4xs-imat-embdQ8.gguf
+ftype      : IQ4_XS - 4.25 bpw
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> 如果 3 个苹果 5 元，那么 12 个苹果多少钱？请给出计算过程。
+如果3个苹果5元，那么每个苹果的价格是 \(5 \div 3 = 1.67\) 元（四舍五入到两位小数）。
+
+所以，12个苹果的价格是 \(12 \times 1.67 = 20.08\) 元。
+
+因此，12个苹果的价格是20.08元。
+
+[ Prompt: 14.4 t/s | Generation: 4.8 t/s ]
+
+
+Exiting...
+

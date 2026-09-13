@@ -1,0 +1,129 @@
+===== MODEL: B1-q4km-imat =====
+
+--- PROMPT 1: 用一句话解释什么是机器学习。 ---
+
+
+Loading model... |-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/- 
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b9962-07d937828
+model      : ./quant_verification/models/B1-q4km-imat.gguf
+ftype      : Q4_K - Medium
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> 用一句话解释什么是机器学习。
+机器学习是让计算机利用数据和经验自动改进和优化的一种人工智能技术。
+
+[ Prompt: 17.1 t/s | Generation: 9.2 t/s ]
+
+
+Exiting...
+
+
+--- PROMPT 2: 写一个 Python 函数，判断一个整数是否为素数。 ---
+
+
+Loading model... |-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/- 
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b9962-07d937828
+model      : ./quant_verification/models/B1-q4km-imat.gguf
+ftype      : Q4_K - Medium
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> 写一个 Python 函数，判断一个整数是否为素数。
+在Python中，判断一个整数是否为素数可以通过以下函数实现：
+
+```python
+def is_prime(n):
+    if n <= 1:
+        return False
+    if n <= 3:
+        return True
+    if n % 2 == 0 or n % 3 == 0:
+        return False
+    i = 5
+    while i * i <= n:
+        if n % i == 0 or n % (i + 2) == 0:
+            return False
+        i += 6
+    return True
+```
+
+这个函数首先检查输入的整数是否小于等于1，如果是，则返回False。然后，它检查输入的整数是否小于等于3，如果是，则返回True。接下来，它检查
+
+[ Prompt: 28.5 t/s | Generation: 10.0 t/s ]
+
+
+Exiting...
+
+
+--- PROMPT 3: 如果 3 个苹果 5 元，那么 12 个苹果多少钱？请给出计算过程。 ---
+
+
+Loading model... |-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\| 
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b9962-07d937828
+model      : ./quant_verification/models/B1-q4km-imat.gguf
+ftype      : Q4_K - Medium
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> 如果 3 个苹果 5 元，那么 12 个苹果多少钱？请给出计算过程。
+如果3个苹果5元，那么每个苹果的价格是 \(5 \div 3 = \frac{5}{3}\) 元。
+
+所以，12个苹果的价格是 \(12 \times \frac{5}{3} = 20\) 元。
+
+[ Prompt: 32.8 t/s | Generation: 7.0 t/s ]
+
+
+Exiting...
+

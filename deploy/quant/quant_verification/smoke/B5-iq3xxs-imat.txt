@@ -1,0 +1,134 @@
+===== MODEL: B5-iq3xxs-imat =====
+
+--- PROMPT 1: 用一句话解释什么是机器学习。 ---
+
+
+Loading model... |-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/- 
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b9962-07d937828
+model      : ./quant_verification/models/B5-iq3xxs-imat.gguf
+ftype      : IQ3_XXS - 3.0625 bpw
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> 用一句话解释什么是机器学习。
+机器学习是一种人工智能技术，通过算法让计算机从数据中学习并做出决策，而无需明确编程。
+
+[ Prompt: 12.4 t/s | Generation: 4.8 t/s ]
+
+
+Exiting...
+
+
+--- PROMPT 2: 写一个 Python 函数，判断一个整数是否为素数。 ---
+
+
+Loading model... |-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/- 
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b9962-07d937828
+model      : ./quant_verification/models/B5-iq3xxs-imat.gguf
+ftype      : IQ3_XXS - 3.0625 bpw
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> 写一个 Python 函数，判断一个整数是否为素数。
+您好！这是一个 Python 函数，用于判断一个整数是否为素数：
+
+```python
+def is_prime(num):
+    if num <= 1:
+        return False
+    for i in range(2, num):
+        if num % i == 0:
+            return False
+    return True
+```
+
+这个函数首先检查 num 是否小于等于 1，如果是的话，函数返回 False。然后，函数会检查 num 是否能被 2 到 num-1 之间的任何数整除。如果 num 能被 num-1 除尽，那么 num 不是素数，函数返回 False。否则，num 是素数，函数返回 True。
+
+例如，`is_prime(11)` 会返回 `True`，因为 11
+
+[ Prompt: 13.4 t/s | Generation: 4.0 t/s ]
+
+
+Exiting...
+
+
+--- PROMPT 3: 如果 3 个苹果 5 元，那么 12 个苹果多少钱？请给出计算过程。 ---
+
+
+Loading model... |-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/- 
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b9962-07d937828
+model      : ./quant_verification/models/B5-iq3xxs-imat.gguf
+ftype      : IQ3_XXS - 3.0625 bpw
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> 如果 3 个苹果 5 元，那么 12 个苹果多少钱？请给出计算过程。
+根据题目，3个苹果的价格是5元，我们可以计算出1个苹果的价格，然后用这个价格来计算12个苹果的价格。
+
+首先，计算1个苹果的价格：
+\[ \text{1个苹果的价格} = \frac{5\text{元}}{3} \]
+
+然后，计算12个苹果的价格：
+\[ \text{12个苹果的价格} = 12 \times \frac{5\text{元}}{3} \]
+
+所以，12个苹果的价格是：
+\[ \text{12个苹果的价格} = 12 \times \frac{5\text{元}}{3} = 20\text{元} \]
+
+因此，12个苹果的价格是20
+
+[ Prompt: 17.6 t/s | Generation: 3.1 t/s ]
+
+
+Exiting...
+

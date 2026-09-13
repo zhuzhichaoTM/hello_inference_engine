@@ -1,0 +1,134 @@
+===== MODEL: B7-q4km-noimat =====
+
+--- PROMPT 1: 用一句话解释什么是机器学习。 ---
+
+
+Loading model... |-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\ 
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b9962-07d937828
+model      : ./quant_verification/models/B7-q4km-noimat.gguf
+ftype      : Q4_K - Medium
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> 用一句话解释什么是机器学习。
+机器学习是让计算机通过经验自动改进和优化的科学。
+
+[ Prompt: 23.9 t/s | Generation: 9.2 t/s ]
+
+
+Exiting...
+
+
+--- PROMPT 2: 写一个 Python 函数，判断一个整数是否为素数。 ---
+
+
+Loading model... |-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/- 
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b9962-07d937828
+model      : ./quant_verification/models/B7-q4km-noimat.gguf
+ftype      : Q4_K - Medium
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> 写一个 Python 函数，判断一个整数是否为素数。
+要判断一个整数是否为素数，可以使用以下的Python函数：
+
+```python
+def is_prime(n):
+    """判断一个整数是否为素数"""
+    if n <= 1:
+        return False
+    if n <= 3:
+        return True
+    if n % 2 == 0 or n % 3 == 0:
+        return False
+    i = 5
+    while i * i <= n:
+        if n % i == 0 or n % (i + 2) == 0:
+            return False
+        i += 6
+    return True
+```
+
+这个函数首先检查输入的整数是否小于等于1，如果是，则返回False，因为1和小于1的整数都不是素数
+
+[ Prompt: 26.8 t/s | Generation: 8.4 t/s ]
+
+
+Exiting...
+
+
+--- PROMPT 3: 如果 3 个苹果 5 元，那么 12 个苹果多少钱？请给出计算过程。 ---
+
+
+Loading model... |-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/- 
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b9962-07d937828
+model      : ./quant_verification/models/B7-q4km-noimat.gguf
+ftype      : Q4_K - Medium
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> 如果 3 个苹果 5 元，那么 12 个苹果多少钱？请给出计算过程。
+要计算12个苹果的价格，我们可以先计算出3个苹果的价格，然后乘以4（因为12是3的4倍），最后除以5（因为5元是3个苹果的价格）。
+
+1. 3个苹果的价格是5元，所以1个苹果的价格是 \(5 \div 3\) 元。
+2. 12个苹果的价格是 \(12 \times (5 \div 3)\) 元。
+3. 计算得到 \(12 \times (5 \div 3) = 12 \times 1.6667\) 元，即大约12.00元。
+
+所以，12个苹果大约是12元。
+
+[ Prompt: 22.1 t/s | Generation: 5.3 t/s ]
+
+
+Exiting...
+

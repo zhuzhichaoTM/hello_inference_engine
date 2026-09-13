@@ -1,0 +1,11 @@
+[done] A0-f16-baseline
+[done] B1-q4km-imat
+[done] B2-iq4xs-noimat
+[done] B3-iq4xs-imat
+[done] B4-iq4xs-imat-embdQ6
+[done] B5-iq3xxs-imat
+[done] B6-iq3xxs-imat-embdQ6
+[done] B7-q4km-noimat
+[done] B8-iq4xs-imat-embdQ8
+[done] B9-iq3xxs-imat-embdQ8
+SMOKE TESTS DONE

@@ -1,0 +1,11 @@
+A0-f16-baseline|PPL = 8.7471 +/- 0.25195|511s
+B7-q4km-noimat|PPL = 9.1546 +/- 0.26598|438s
+B1-q4km-imat|PPL = 9.0038 +/- 0.26120|503s
+B2-iq4xs-noimat|PPL = 9.3576 +/- 0.27268|475s
+B3-iq4xs-imat|PPL = 9.0924 +/- 0.26433|429s
+B4-iq4xs-imat-embdQ6|PPL = 9.0924 +/- 0.26433|365s
+B8-iq4xs-imat-embdQ8|PPL = 9.1005 +/- 0.26455|338s
+B5-iq3xxs-imat|PPL = 10.7153 +/- 0.31673|314s
+B6-iq3xxs-imat-embdQ6|PPL = 10.6181 +/- 0.31455|351s
+B9-iq3xxs-imat-embdQ8|PPL = 10.6277 +/- 0.31462|328s
+Z-delivered-q4km|PPL = 9.1546 +/- 0.26598|285s

@@ -1,0 +1,54 @@
+==============================================
+[20:19:01] QUANTIZING: B1-q4km-imat
+  args: ./llama.cpp/build/bin/llama-quantize --imatrix ./quant_verification/imatrix-qwen25-1.5b.gguf ./qwen2.5-1.5b-instruct-f16.gguf ./quant_verification/models/B1-q4km-imat.gguf Q4_K_M
+  exit=0  size=986048320  time=90s
+llama_model_quantize_impl: model size  =  2944.68 MiB (16.00 BPW)
+llama_model_quantize_impl: quant size  =   934.69 MiB (5.08 BPW)
+==============================================
+[20:20:31] QUANTIZING: B2-iq4xs-noimat
+  args: ./llama.cpp/build/bin/llama-quantize ./qwen2.5-1.5b-instruct-f16.gguf ./quant_verification/models/B2-iq4xs-noimat.gguf IQ4_XS
+  exit=0  size=902182496  time=114s
+llama_model_quantize_impl: model size  =  2944.68 MiB (16.00 BPW)
+llama_model_quantize_impl: quant size  =   854.71 MiB (4.64 BPW)
+==============================================
+[20:22:25] QUANTIZING: B3-iq4xs-imat
+  args: ./llama.cpp/build/bin/llama-quantize --imatrix ./quant_verification/imatrix-qwen25-1.5b.gguf ./qwen2.5-1.5b-instruct-f16.gguf ./quant_verification/models/B3-iq4xs-imat.gguf IQ4_XS
+  exit=0  size=895731520  time=128s
+llama_model_quantize_impl: model size  =  2944.68 MiB (16.00 BPW)
+llama_model_quantize_impl: quant size  =   848.56 MiB (4.61 BPW)
+==============================================
+[20:24:33] QUANTIZING: B4-iq4xs-imat-embdQ6
+  args: ./llama.cpp/build/bin/llama-quantize --imatrix ./quant_verification/imatrix-qwen25-1.5b.gguf --token-embedding-type Q6_K ./qwen2.5-1.5b-instruct-f16.gguf ./quant_verification/models/B4-iq4xs-imat-embdQ6.gguf IQ4_XS
+  exit=0  size=895731520  time=107s
+llama_model_quantize_impl: model size  =  2944.68 MiB (16.00 BPW)
+llama_model_quantize_impl: quant size  =   848.56 MiB (4.61 BPW)
+==============================================
+[20:26:20] QUANTIZING: B5-iq3xxs-imat
+  args: ./llama.cpp/build/bin/llama-quantize --imatrix ./quant_verification/imatrix-qwen25-1.5b.gguf ./qwen2.5-1.5b-instruct-f16.gguf ./quant_verification/models/B5-iq3xxs-imat.gguf IQ3_XXS
+  exit=0  size=668792128  time=195s
+llama_model_quantize_impl: model size  =  2944.68 MiB (16.00 BPW)
+llama_model_quantize_impl: quant size  =   632.13 MiB (3.44 BPW)
+==============================================
+[20:29:35] QUANTIZING: B6-iq3xxs-imat-embdQ6
+  args: ./llama.cpp/build/bin/llama-quantize --imatrix ./quant_verification/imatrix-qwen25-1.5b.gguf --token-embedding-type Q6_K ./qwen2.5-1.5b-instruct-f16.gguf ./quant_verification/models/B6-iq3xxs-imat-embdQ6.gguf IQ3_XXS
+  exit=0  size=699787072  time=197s
+llama_model_quantize_impl: model size  =  2944.68 MiB (16.00 BPW)
+llama_model_quantize_impl: quant size  =   661.69 MiB (3.60 BPW)
+==============================================
+[20:32:52] QUANTIZING: B7-q4km-noimat
+  args: ./llama.cpp/build/bin/llama-quantize ./qwen2.5-1.5b-instruct-f16.gguf ./quant_verification/models/B7-q4km-noimat.gguf Q4_K_M
+  exit=0  size=986048096  time=57s
+llama_model_quantize_impl: model size  =  2944.68 MiB (16.00 BPW)
+llama_model_quantize_impl: quant size  =   934.69 MiB (5.08 BPW)
+==============================================
+[20:33:49] ALL QUANTIZATION DONE
+total 11871760
+drwxr-xr-x  9 zhuzhichao  wheel        288  9 13 20:32 .
+drwxr-xr-x  8 zhuzhichao  wheel        256  9 13 20:19 ..
+-rw-r--r--  1 zhuzhichao  wheel  986048320  9 13 20:20 B1-q4km-imat.gguf
+-rw-r--r--  1 zhuzhichao  wheel  902182496  9 13 20:22 B2-iq4xs-noimat.gguf
+-rw-r--r--  1 zhuzhichao  wheel  895731520  9 13 20:24 B3-iq4xs-imat.gguf
+-rw-r--r--  1 zhuzhichao  wheel  895731520  9 13 20:26 B4-iq4xs-imat-embdQ6.gguf
+-rw-r--r--  1 zhuzhichao  wheel  668792128  9 13 20:29 B5-iq3xxs-imat.gguf
+-rw-r--r--  1 zhuzhichao  wheel  699787072  9 13 20:32 B6-iq3xxs-imat-embdQ6.gguf
+-rw-r--r--  1 zhuzhichao  wheel  986048096  9 13 20:33 B7-q4km-noimat.gguf

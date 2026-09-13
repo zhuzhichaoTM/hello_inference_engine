@@ -1,0 +1,10 @@
+0.00.812.313 W load: control-looking token: 128247 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.02.630.619 I 
+0.02.630.686 I system_info: n_threads = 4 (n_threads_batch = 4) / 8 | MTL : EMBED_LIBRARY = 1 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | BMI2 = 1 | LLAMAFILE = 1 | ACCELERATE = 1 | REPACK = 1 | 
+0.02.630.706 I perplexity: tokenizing the input ..
+0.03.455.889 I perplexity: tokenization took 825.194 ms
+0.03.456.120 I perplexity: calculating perplexity over 32 chunks, n_ctx=512, batch_size=2048, n_seq=4
+0.43.986.968 I perplexity: 40.53 seconds per pass - ETA 5.40 minutes
+[1]8.1720,[2]11.3244,[3]11.4072,[4]11.4682,[5]11.3509,[6]11.6055,[7]11.8695,[8]12.6440,[9]13.1046,[10]13.5906,[11]13.7483,[12]14.0757,[13]14.5218,[14]14.2030,[15]13.9104,[16]14.0516,[17]13.0854,[18]13.3198,[19]13.1628,[20]13.1920,[21]12.8540,[22]12.8022,[23]12.2504,[24]11.6879,[25]11.3813,[26]11.1747,[27]10.8542,[28]10.6456,[29]10.7306,[30]10.7331,[31]10.6179,[32]10.6277,
+5.27.265.172 I Final estimate: PPL = 10.6277 +/- 0.31462
+
