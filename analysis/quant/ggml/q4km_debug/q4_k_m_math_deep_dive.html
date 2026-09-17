@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Q4_K_M 量化算法 — 数学原理深度解析</title>
+<!-- 引入 MathJax 3 渲染专业 LaTeX 数学公式 -->
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$', '$'], ['\\(', '\\)']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+    processEscapes: true
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+  }
+};
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #2d3748;
+        padding: 20px;
+        min-height: 100vh;
+        line-height: 1.8;
+    }
+    .container {
+        max-width: 1400px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 20px;
+        padding: 40px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    h1 {
+        text-align: center;
+        color: #667eea;
+        margin-bottom: 10px;
+        font-size: 2.2em;
+        border-bottom: 3px solid #764ba2;
+        padding-bottom: 15px;
+    }
+    h2 {
+        color: #667eea;
+        margin-top: 40px;
+        margin-bottom: 15px;
+        font-size: 1.6em;
+        border-left: 6px solid #764ba2;
+        padding-left: 15px;
+    }
+    h3 {
+        color: #764ba2;
+        margin-top: 30px;
+        margin-bottom: 12px;
+        font-size: 1.3em;
+    }
+    h4 {
+        color: #4a5568;
+        margin-top: 20px;
+        margin-bottom: 10px;
+        font-size: 1.1em;
+    }
+    .subtitle {
+        text-align: center;
+        color: #718096;
+        margin-bottom: 40px;
+        font-size: 1.15em;
+        font-style: italic;
+    }
+    .toc {
+        background: #f7fafc;
+        border: 2px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 25px;
+        margin: 30px 0;
+    }
+    .toc h3 { margin-top: 0; color: #667eea; }
+    .toc ul { list-style: none; padding-left: 20px; }
+    .toc li { margin: 8px 0; }
+    .toc a { color: #764ba2; text-decoration: none; font-weight: 500; }
+    .toc a:hover { color: #667eea; text-decoration: underline; }
+
+    /* ===== 数学展示框样式 ===== */
+    .math-card {
+        background: #f8fafc;
+        border-radius: 10px;
+        padding: 18px 24px;
+        margin: 20px 0;
+        border-left: 5px solid #48bb78;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        overflow-x: auto;
+    }
+    .math-card.blue {
+        border-left-color: #4299e1;
+        background: #ebf8ff;
+    }
+    .math-card.purple {
+        border-left-color: #805ad5;
+        background: #faf5ff;
+    }
+    .math-title {
+        font-weight: bold;
+        color: #2d3748;
+        margin-bottom: 10px;
+        font-size: 1.05em;
+    }
+    .math-note {
+        font-size: 0.9em;
+        color: #718096;
+        margin-top: 8px;
+        font-style: italic;
+    }
+
+    .math-highlight {
+        background: linear-gradient(120deg, #ffd70025, #ffed4e45);
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 5px solid #f5576c;
+        margin: 15px 0;
+    }
+    .derivation {
+        background: #fffaf0;
+        border: 2px dashed #ed8936;
+        padding: 18px 24px;
+        border-radius: 8px;
+        margin: 15px 0;
+    }
+    .derivation-step {
+        margin: 14px 0;
+        padding-left: 25px;
+        position: relative;
+    }
+    .derivation-step::before {
+        content: "▶";
+        position: absolute;
+        left: 0;
+        color: #ed8936;
+        font-size: 0.9em;
+    }
+    .math-section {
+        margin: 20px 0;
+        padding: 18px 22px;
+        background: #f8fafc;
+        border-radius: 8px;
+        border-left: 4px solid #667eea;
+    }
+    .code-block {
+        font-family: 'Consolas', 'Courier New', monospace;
+        background: #1a202c;
+        color: #f7fafc;
+        padding: 16px;
+        border-radius: 8px;
+        margin: 14px 0;
+        font-size: 0.95em;
+        overflow-x: auto;
+        line-height: 1.5;
+    }
+    .example {
+        background: #e6fffa;
+        border: 1px solid #81e6d9;
+        padding: 18px;
+        border-radius: 8px;
+        margin: 14px 0;
+    }
+    .example h4 { color: #234e52; margin-top: 0; }
+    .warning {
+        background: #fff5f5;
+        border: 2px solid #fc8181;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 15px 0;
+    }
+    .warning strong { color: #c53030; }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 15px 0;
+    }
+    table th, table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    table th {
+        background: #667eea;
+        color: white;
+        font-weight: 600;
+    }
+    table tr:hover { background: #f7fafc; }
+    .flowchart {
+        font-family: 'Consolas', 'Courier New', monospace;
+        background: #1a202c;
+        color: #cbd5e0;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+        font-size: 0.9em;
+        overflow-x: auto;
+        white-space: pre;
+    }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>Q4_K_M 量化算法 — 数学原理深度解析</h1>
+    <div class="subtitle">采用标准 LaTeX 严格推导：网格搜索、加权最小二乘正规方程、Cramer法则与两级缩放模型</div>
+
+    <div class="toc">
+        <h3>目录</h3>
+        <ul>
+            <li><a href="#overview">1. Q4_K_M 算法概述与标准数学模型</a></li>
+            <li><a href="#twophase">2. 变量分离与两级优化框架（离散穷举 + 连续闭式解）</a></li>
+            <li><a href="#grid">3. 网格搜索（Grid Search）：离散划分穷举策略（Why-What-How-Result）</a></li>
+            <li><a href="#wls">4. 加权最小二乘（Weighted Least Squares）：正规方程完整推导</a></li>
+            <li><a href="#application">5. 在 Q4_K_M 完整流程中的数学对应</a></li>
+            <li><a href="#imatrix">6. imatrix（AWQ）激活感知重要性加权数学模型</a></li>
+            <li><a href="#comparison">7. 常用量化算法规格横向对比</a></li>
+            <li><a href="#summary">8. 核心总结与调试指导</a></li>
+        </ul>
+    </div>
+
+    <!-- 1. 概述与数学模型 -->
+    <h2 id="overview">1. Q4_K_M 算法概述与标准数学模型</h2>
+
+    <div class="math-section">
+        <h4>📐 规范数学模型表达</h4>
+        <p>输入为 256 个单精度浮点权重构成的超块（Super-block）：</p>
+        $$\mathbf{x} = [x_0, x_1, \dots, x_{255}]^T \in \mathbb{R}^{256}$$
+
+        <p>将 256 个元素均分为 $8$ 个子块（Sub-block），每个子块包含 $32$ 个权重。对任意第 $i$ 个权重（$0 \le i < 256$），设其所属的子块索引为：</p>
+        $$j = \lfloor i / 32 \rfloor \in \{0, 1, \dots, 7\}$$
+
+        <p>Q4_K 采用<strong>两级非对称仿射量化模型</strong>，其反量化（重建）表达式为：</p>
+
+        <div class="math-card blue">
+            <div class="math-title">【公式 1-1】Q4_K 重建函数（Dequantization Model）</div>
+            $$\hat{x}_i = \left( d \cdot sc_j \right) \cdot q_i - \left( d_{\min} \cdot m_j \right)$$
+            <div class="math-note">每个分量的精确约束条件与位宽规格如下：</div>
+        </div>
+
+        <table>
+            <tr>
+                <th>数学符号</th>
+                <th>数据结构字段</th>
+                <th>数据类型</th>
+                <th>取值范围与物理意义</th>
+            </tr>
+            <tr>
+                <td>$d$</td>
+                <td><code>block.d</code></td>
+                <td><code>ggml_half</code> (FP16)</td>
+                <td>全局超块尺度（Super-block Scale），提供大动态范围底座</td>
+            </tr>
+            <tr>
+                <td>$d_{\min}$</td>
+                <td><code>block.dmin</code></td>
+                <td><code>ggml_half</code> (FP16)</td>
+                <td>全局超块偏移基底（Super-block Min Scale）</td>
+            </tr>
+            <tr>
+                <td>$sc_j$</td>
+                <td><code>scales[...]</code> 解码</td>
+                <td>6-bit 无符号整数</td>
+                <td>$sc_j \in [0, 63]$，第 $j$ 子块的局部量化步长倍率</td>
+            </tr>
+            <tr>
+                <td>$m_j$</td>
+                <td><code>scales[...]</code> 解码</td>
+                <td>6-bit 无符号整数</td>
+                <td>$m_j \in [0, 63]$，第 $j$ 子块的局部零点偏移倍率</td>
+            </tr>
+            <tr>
+                <td>$q_i$</td>
+                <td><code>qs[...]</code> 解码</td>
+                <td>4-bit 无符号整数</td>
+                <td>$q_i \in \{0, 1, \dots, 15\}$，第 $i$ 个权重的 4-bit 离散档位</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="math-card purple">
+        <div class="math-title">【公式 1-2】量化优化目标函数（Objective Function）</div>
+        <p>寻找最优的集合 $\{ d, d_{\min}, \{sc_j, m_j\}_{j=0}^7, \{q_i\}_{i=0}^{255} \}$，最小化全超块加权均方重建误差：</p>
+        $$\min \mathcal{E} = \sum_{i=0}^{255} w_i \left( x_i - \hat{x}_i \right)^2 = \sum_{j=0}^{7} \sum_{k=0}^{31} w_{32j+k} \left[ x_{32j+k} - \left( (d \cdot sc_j) q_{32j+k} - (d_{\min} \cdot m_j) \right) \right]^2$$
+        <div class="math-note">权重 $w_i > 0$ 表示第 $i$ 个权重的敏感度/重要度权重。</div>
+    </div>
+
+    <!-- 2. 两级优化框架 -->
+    <h2 id="twophase">2. 变量分离与两级优化框架（离散穷举 + 连续闭式解）</h2>
+
+    <div class="math-section">
+        <h4>🔍 优化的核心难点：离散-连续混合非凸问题</h4>
+        <p>若同时联合求解连续尺度 $(d, sc_j, m_j)$ 与离散编码 $q_i$，由于取整运算具有台阶跳跃性，梯度处处为 0，无法直接通过求导求解。</p>
+        <p>GGML 采用<strong>分层投影解耦法（Variable Projection & Coordinate Relaxation）</strong>：</p>
+
+        <div class="derivation">
+            <h4>📐 变量解耦与分解过程</h4>
+            <div class="derivation-step">
+                <strong>第一层：子块内局部独立化。</strong> 暂不考虑超块全局约束 $d, d_{\min}$，先将每个子块视作独立的线性模型：
+                $$x_{32j+k} \approx s_j \cdot L_{32j+k} - \mu_j, \quad L \in \{0, 1, \dots, 15\}, \quad s_j, \mu_j \in \mathbb{R}$$
+                其中 $s_j \equiv d \cdot sc_j$ 为局部连续尺度，$\mu_j \equiv d_{\min} \cdot m_j$ 为局部连续偏移。
+            </div>
+            <div class="derivation-step">
+                <strong>第二层：离散变量与连续变量分离。</strong> 对单个子块的目标函数：
+                $$\min_{L, s_j, \mu_j} E_j(L, s_j, \mu_j) = \min_{L \in \{0..15\}^{32}} \left[ \min_{s_j, \mu_j \in \mathbb{R}} \sum_{k=0}^{31} w_k \left( s_j L_k - \mu_j - x_k \right)^2 \right]$$
+            </div>
+            <div class="derivation-step">
+                <strong>决策闭环：</strong>
+                <br>• <strong>内层（连续）</strong>：一旦离散划分 $L$ 选定，目标函数退化为严格的<strong>凸二次规划（Convex Quadratic Program）</strong>，存在解析闭式极值解！
+                <br>• <strong>外层（离散）</strong>：离散划分 $L$ 维度太高（$16^{32}$ 种可能），但它们由单一尺度参数的取整阈值驱动。因此通过<strong>网格搜索（Grid Search）穷举 21 种极具代表性的候选划分</strong>。
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. 网格搜索 -->
+    <h2 id="grid">3. 网格搜索（Grid Search）：离散变量的穷举策略</h2>
+
+    <div class="math-highlight">
+        <strong>章节脉络：</strong>本节按照 <strong>为什么需要 (Why) → 是什么 (What) → 怎么执行 (How) → 最终结果 (Result)</strong> 完整阐述。
+    </div>
+
+    <h3>3.1 为什么：为什么必须使用网格搜索？（Why）</h3>
+    <div class="math-section">
+        <h4>1. 梯度失效</h4>
+        <p>离散档位 $L_k$ 的生成由取整算子定义：</p>
+        $$L_k = \mathrm{clamp}\left( \left\lfloor \mathrm{iscale} \cdot (x_k - x_{\min}) + 0.5 \right\rfloor, 0, 15 \right)$$
+        <p>取整阶跃函数的导数在几乎所有区域都为零（$\frac{d \lfloor u \rceil}{du} = 0$），在跳跃边界处不可导。任何基于梯度的寻优算法均失效。</p>
+
+        <h4>2. 破除长尾分布对有效档位的浪费</h4>
+        <p>真实大模型权重具有高 Kurtosis（尖峰肥尾）特性，常存在少数离群值。若直接依据极值 $x_{\min}, x_{\max}$ 进行标准均匀划分：</p>
+        $$\mathrm{iscale}_{\text{naive}} = \frac{15}{x_{\max} - x_{\min}}$$
+        <p>如果负轴存在一个孤立离群值，整个划分空间将被严重拉伸，导致 95% 以上聚集在中心区域的密集权重只能分到 2~3 个极其粗糙的量化档位，造成信噪比雪崩。通过微调搜索空间，主动允许少量离群点饱和截断（Clipping），把更多的档位分辨率让渡给密集主体，加权均方误差大幅降低。</p>
+    </div>
+
+    <h3>3.2 是什么：网格搜索在搜什么？（What）</h3>
+    <div class="math-section">
+        <p>网格搜索并非盲目尝试浮点 scale，而是<strong>搜索不同的量化空间伸缩与截断划分模板（Partition Candidates）</strong>。</p>
+
+        <div class="math-card">
+            <div class="math-title">【公式 3-1】候选逆尺度探测方程（Candidate iscale Equation）</div>
+            $$\mathrm{iscale}^{(is)} = \frac{r_{\min} + r_{\delta} \cdot is + n_{\max}}{x_{\max} - x_{\min}}, \quad is \in \{0, 1, \dots, nstep\}$$
+            <div class="math-note">Q4_K ref 实现中配置的标准参数：$r_{\min} = -1.0,\; r_{\delta} = 0.1,\; nstep = 20,\; n_{\max} = 15$。</div>
+        </div>
+
+        <p>令探测偏置项为 $\Delta(is) = r_{\min} + r_{\delta} \cdot is = -1.0 + 0.1 \cdot is \in [-1.0, +1.0]$，公式简化为：</p>
+        $$\mathrm{iscale}^{(is)} = \frac{15 + \Delta(is)}{\mathrm{range}}, \quad \Delta(is) \in \{-1.0, -0.9, \dots, 0.0, \dots, +1.0\}$$
+
+        <p>几何影响对照表：</p>
+        <table>
+            <tr>
+                <th>候选序号 $is$</th>
+                <th>偏置 $\Delta(is)$</th>
+                <th>分子项</th>
+                <th>几何含义与截断行为</th>
+            </tr>
+            <tr>
+                <td>$is = 0$</td>
+                <td>$-1.0$</td>
+                <td>$14.0$</td>
+                <td>有效档位收缩至 14 档。步长较粗，允许外围权重适度截断，提升中心密集区动态分辨率。</td>
+            </tr>
+            <tr>
+                <td>$is = 10$</td>
+                <td>$0.0$</td>
+                <td>$15.0$</td>
+                <td><strong>标准满量程对齐基准（Baseline）</strong>：恰好 15 档覆盖 $[x_{\min}, x_{\max}]$ 全跨度。</td>
+            </tr>
+            <tr>
+                <td>$is = 20$</td>
+                <td>$+1.0$</td>
+                <td>$16.0$</td>
+                <td>有效档位扩展至 16 档。步长更细，向外扩展区间，抑制极端零点偏移带来的饱和。</td>
+            </tr>
+        </table>
+    </div>
+
+    <h3>3.3 怎么执行：执行流水线（How）</h3>
+    <div class="math-section">
+        <p>执行流程由外层枚举和内层闭式绑定构成闭环：</p>
+        <div class="derivation">
+            <div class="derivation-step">
+                <strong>Step 1. 基线建立：</strong>首先用基准 $\Delta = 0$ 计算初始离散划分 $\mathbf{L}^{(0)}$，并记录其初始加权均方误差为 $\mathcal{E}_{\text{best}}$。
+            </div>
+            <div class="derivation-step">
+                <strong>Step 2. 遍历 21 轮候选（$is = 0 \dots 20$）：</strong>
+                <br>① 计算当前逆尺度 $\mathrm{iscale}^{(is)}$；
+                <br>② 对 32 个浮点输入执行定点量化，得到临时整数数组 $\mathbf{L}_{\text{aux}} \in \{0..15\}^{32}$；
+                <br>③ <strong>交接给加权最小二乘：</strong>将固定的离散数组 $\mathbf{L}_{\text{aux}}$ 输入加权正规方程，利用 Cramer 法则瞬间求出连续最优解 $s^*(is)$ 与 $\mu^*(is)$；
+                <br>④ <strong>重构误差计算：</strong>
+                $$\mathcal{E}_{\text{cur}} = \sum_{k=0}^{31} w_k \left( s^*(is) \cdot L_{\text{aux}}[k] - \mu^*(is) - x_k \right)^2$$
+            </div>
+            <div class="derivation-step">
+                <strong>Step 3. 竞争更优判定：</strong>
+                若 $\mathcal{E}_{\text{cur}} < \mathcal{E}_{\text{best}}$，则执行状态更新：
+                $$\mathcal{E}_{\text{best}} \leftarrow \mathcal{E}_{\text{cur}}, \quad s_j \leftarrow s^*(is), \quad \mu_j \leftarrow \mu^*(is), \quad \mathbf{L} \leftarrow \mathbf{L}_{\text{aux}}$$
+            </div>
+        </div>
+    </div>
+
+    <h3>3.4 最终结果：产出了什么？（Result）</h3>
+    <div class="math-section">
+        <p>网格搜索结束时，向系统交付三个确定性的核心数学产物：</p>
+        <ul>
+            <li><strong>最优子块连续步长 $s_j$ (float)</strong>：该子块在最优离散划分下的真实尺度。8 个子块的 $[s_0, \dots, s_7]$ 将被输入第 2 阶段，用于计算全局超块尺度 $d = \max_j(s_j) / 63$；</li>
+            <li><strong>最优子块连续偏移 $\mu_j$ (float)</strong>：该子块的理想底座偏移，转正后输出为 <code>mins[j]</code>，用于计算全局超块 $d_{\min}$；</li>
+            <li><strong>最优离散划分数组 $L[0..31]$ (uint8)</strong>：提供了 32 个权重的初始最佳 4-bit 编码分布。</li>
+        </ul>
+    </div>
+
+    <!-- 4. 加权最小二乘 -->
+    <h2 id="wls">4. 加权最小二乘（Weighted Least Squares）：正规方程完整推导</h2>
+
+    <div class="math-section">
+        <h4>🎯 连续子问题的严格数学表述</h4>
+        <p>在网格搜索的任何一轮迭代中，假定离散量化划分 $\mathbf{L} = [L_0, L_1, \dots, L_{31}]^T$ 已经固定。设反量化表达式为：</p>
+        $$\hat{x}_k(s, m) = s \cdot L_k + m$$
+        <p>（注：此处为推导方便，设 $m \equiv -\mu$ 为带符号偏置）。</p>
+
+        <p>加权残差平方和目标函数为：</p>
+        $$\mathcal{S}(s, m) = \sum_{k=0}^{31} w_k \left( s \cdot L_k + m - x_k \right)^2$$
+    </div>
+
+    <div class="derivation">
+        <h4>📐 极值一阶充要条件推导（First-Order Optimality Conditions）</h4>
+        <p>由于 $\mathcal{S}(s, m)$ 是严格正定的二元凸二次函数，极值点必满足梯度为零：</p>
+
+        <div class="derivation-step">
+            <strong>对尺度 $s$ 求一阶偏导：</strong>
+            $$\frac{\partial \mathcal{S}}{\partial s} = \frac{\partial}{\partial s} \sum_{k=0}^{31} w_k \left( s L_k + m - x_k \right)^2 = 2 \sum_{k=0}^{31} w_k L_k \left( s L_k + m - x_k \right) = 0$$
+            展开并提取待解参数 $s$ 和 $m$：
+            $$s \left( \sum_{k=0}^{31} w_k L_k^2 \right) + m \left( \sum_{k=0}^{31} w_k L_k \right) = \sum_{k=0}^{31} w_k L_k x_k$$
+        </div>
+
+        <div class="derivation-step">
+            <strong>对偏移 $m$ 求一阶偏导：</strong>
+            $$\frac{\partial \mathcal{S}}{\partial m} = \frac{\partial}{\partial m} \sum_{k=0}^{31} w_k \left( s L_k + m - x_k \right)^2 = 2 \sum_{k=0}^{31} w_k \left( s L_k + m - x_k \right) = 0$$
+            展开并整理：
+            $$s \left( \sum_{k=0}^{31} w_k L_k \right) + m \left( \sum_{k=0}^{31} w_k \right) = \sum_{k=0}^{31} w_k x_k$$
+        </div>
+    </div>
+
+    <div class="math-card blue">
+        <div class="math-title">【公式 4-1】正规方程组矩阵形式（Normal Equations）</div>
+        $$\begin{bmatrix}
+        \sum_{k} w_k L_k^2 & \sum_{k} w_k L_k \\
+        \sum_{k} w_k L_k   & \sum_{k} w_k
+        \end{bmatrix}
+        \begin{bmatrix}
+        s \\
+        m
+        \end{bmatrix}
+        =
+        \begin{bmatrix}
+        \sum_{k} w_k L_k x_k \\
+        \sum_{k} w_k x_k
+        \end{bmatrix}$$
+    </div>
+
+    <div class="math-section">
+        <h4>Cramer 法则解析闭式解（Closed-form Solution）</h4>
+        <p>引入 GGML 源码中对应的统计聚合缩写标量：</p>
+        <ul>
+            <li>$S_{w} = \sum_{k=0}^{31} w_k$ （源码变量 <code>sum_w</code>）</li>
+            <li>$S_{l} = \sum_{k=0}^{31} w_k L_k$ （源码变量 <code>sum_l</code>）</li>
+            <li>$S_{l2} = \sum_{k=0}^{31} w_k L_k^2$ （源码变量 <code>sum_l2</code>）</li>
+            <li>$S_{x} = \sum_{k=0}^{31} w_k x_k$ （源码变量 <code>sum_x</code>）</li>
+            <li>$S_{xl} = \sum_{k=0}^{31} w_k L_k x_k$ （源码变量 <code>sum_xl</code>）</li>
+        </ul>
+
+        <p>主系数行列式（Gram 行列式）：</p>
+        $$D = \det \begin{bmatrix} S_{l2} & S_{l} \\ S_{l} & S_{w} \end{bmatrix} = S_{w} S_{l2} - S_{l}^2$$
+
+        <div class="math-card purple">
+            <div class="math-title">【公式 4-2】全局解析闭式最优解（Cramer's Rule Formula）</div>
+            $$s^* = \frac{\det \begin{bmatrix} S_{xl} & S_{l} \\ S_{x} & S_{w} \end{bmatrix}}{D} = \frac{S_{w} S_{xl} - S_{x} S_{l}}{S_{w} S_{l2} - S_{l}^2}$$
+            $$m^* = \frac{\det \begin{bmatrix} S_{l2} & S_{xl} \\ S_{l} & S_{x} \end{bmatrix}}{D} = \frac{S_{l2} S_{x} - S_{l} S_{xl}}{S_{w} S_{l2} - S_{l}^2}$$
+        </div>
+
+        <h4>工程与物理边界约束约束逻辑</h4>
+        <div class="code-block">
+// 源码边界条件保护映射（ggml-quants_q4_k_m.c）
+float D = sum_w * sum_l2 - sum_l * sum_l;
+if (D > 0) {
+    float this_scale = (sum_w * sum_xl - sum_x * sum_l) / D;
+    float this_min   = (sum_l2 * sum_x - sum_l * sum_xl) / D;
+
+    // 物理约束：反量化模型中减去的偏移量必须是正的 (min ≤ 0)
+    // 若拟合出的 this_min > 0，违背非对称偏置物理意义，将其强制归零
+    if (this_min > 0) {
+        this_min = 0;
+        // 退化为单参数（仅 scale）加权最小二乘：
+        // ∂S/∂s = 2∑w_k L_k (s L_k - x_k) = 0 => s = ∑w_k L_k x_k / ∑w_k L_k^2
+        this_scale = sum_xl / sum_l2;
+    }
+}
+        </div>
+    </div>
+
+    <!-- 5. 完整应用流程 -->
+    <h2 id="application">5. 在 Q4_K_M 完整流程中的数学对应</h2>
+
+    <div class="flowchart">
+                    256 个浮点输入权重 x[0..255]
+                               │
+            ┌──────────────────┴──────────────────┐
+        划分为 8 个连续子块 (Sub-block, 32 floats each)
+            │
+            ▼ (循环 j = 0..7)
+┌─────────────────────────────────────────────────────────────┐
+│ 【核心优化】make_qkx2_quants                                │
+│                                                             │
+│   1. 网格搜索：遍历 21 种 iscale 伸缩划分 L_aux[]           │
+│   2. 闭式求解：正规方程 Cramer 闭式解解出 (s*, m*)          │
+│   3. 最小误差竞争：输出最优 s_j (f32) 与 m_j (f32)          │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                 产生 [s_0..s_7] 与 [m_0..m_7]
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 【超块级量化】全局尺度提炼 (Super-block Scale Quantization)  │
+│                                                             │
+│   max_scale = max(s_0, ..., s_7)                            │
+│   d = max_scale / 63.0             -> 存入 block.d (FP16)   │
+│   sc[j] = round( s_j / d ) ∈ [0,63]-> 6-bit 整数            │
+│                                                             │
+│   max_min = max(m_0, ..., m_7)                              │
+│   d_min = max_min / 63.0           -> 存入 block.dmin(FP16) │
+│   m[j] = round( m_j / d_min ) ∈ [0,63] -> 6-bit 整数        │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 【重量化回环】消除尺度离散化误差 (Requantization Loop)       │
+│                                                             │
+│   由于 d, d_min 经过了 FP16 截断，sc[j], m[j] 经过了 6-bit  │
+│   取整，必须使用硬件最终存储的有效系数重新计算 4-bit 档位： │
+│                                                             │
+│   d_eff  = FP16_TO_FP32(d) * sc[j]                          │
+│   dm_eff = FP16_TO_FP32(d_min) * m[j]                       │
+│   q_i = clamp( round( (x_i + dm_eff) / d_eff ), 0, 15 )    │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 【最终位打包】生成 144 字节 block_q4_K                      │
+│                                                             │
+│   block.d     : 2 字节 (FP16)                               │
+│   block.dmin  : 2 字节 (FP16)                               │
+│   block.scales: 12 字节 (8 个 6-bit sc + 8 个 6-bit m)     │
+│   block.qs    : 128 字节 (256 个 4-bit 权重成对存储)        │
+│   总计 = 2 + 2 + 12 + 128 = 144 字节 (4.5 bits/weight)      │
+└─────────────────────────────────────────────────────────────┘
+    </div>
+
+    <!-- 6. imatrix -->
+    <h2 id="imatrix">6. imatrix（AWQ）激活感知重要性加权数学模型</h2>
+
+    <div class="math-section">
+        <h4>🎯 为什么需要数据感知（Activation-aware）加权？</h4>
+        <p>在深度自注意力机制与 FFN 层运算中，神经元对模型输出的最终影响极不均等。一个在激活值上频繁出现高幅度输入的通道，其对应权重哪怕发生 1% 的扰动，都可能造成最终生成 Logits 的巨大偏移。</p>
+
+        <div class="math-card">
+            <div class="math-title">【公式 6-1】两种执行路径的敏感度权重公式</div>
+            $$\text{ref 路径（无 imatrix，局部统计启发式）: } \quad w_k = \sqrt{\frac{1}{32}\sum_{l=0}^{31} x_l^2} + |x_k|$$
+            $$\text{impl 路径（有 imatrix，数据驱动激活感知）: } \quad w_k = I_k \cdot \sqrt{\sigma_{\text{block}}^2 + x_k^2}$$
+            <div class="math-note">其中 $I_k$ 为校准数据集跑出来的绝对重要度，$\sigma_{\text{block}}^2$ 为当前超块全局激活能量均方差。</div>
+        </div>
+
+        <p>在正规方程中，由于各项残差被 $w_k$ 加权：</p>
+        $$\mathcal{S} = \sum_k w_k \left( \hat{x}_k - x_k \right)^2$$
+        <p>当权重 $x_k$ 对应重要特征（$I_k$ 很大）时，优化目标会施加极强的惩罚，强迫 Cramer 闭式解将拟合直线 $(s^*, m^*)$ 紧紧吸附在关键权重上，哪怕牺牲次要低频权重也在所不惜。</p>
+    </div>
+
+    <!-- 7. 对比 -->
+    <h2 id="comparison">7. 常用量化算法规格横向对比</h2>
+
+    <table>
+        <tr>
+            <th>量化类型</th>
+            <th>权重位宽</th>
+            <th>尺度位宽与分级结构</th>
+            <th>优化方法</th>
+            <th>实际 bpw</th>
+            <th>特点分析</th>
+        </tr>
+        <tr>
+            <td><strong>Q4_0</strong></td>
+            <td>4-bit</td>
+            <td>32 权重共享一个 FP16 尺度</td>
+            <td>对称最大值归一化</td>
+            <td>4.50</td>
+            <td>计算极简但无法处理非对称长尾，精度损失大</td>
+        </tr>
+        <tr>
+            <td><strong>Q4_K_M (Q4_K)</strong></td>
+            <td>4-bit</td>
+            <td><strong>两级缩放</strong>：超块 2×FP16 + 子块 2×6-bit</td>
+            <td><strong>网格搜索 + 加权最小二乘 + 重量化</strong></td>
+            <td><strong>4.50</strong></td>
+            <td>空间完全相同，但通过多级精细拟合，困惑度（PPL）大幅改善</td>
+        </tr>
+        <tr>
+            <td><strong>Q6_K</strong></td>
+            <td>6-bit</td>
+            <td>超块 FP16 + 子块 8-bit scales</td>
+            <td>分块最小二乘拟合</td>
+            <td>6.56</td>
+            <td>高精度接近原始 FP16，Q4_K_M 方案中将其用于最关键张量</td>
+        </tr>
+    </table>
+
+    <!-- 8. 总结 -->
+    <h2 id="summary">8. 核心总结与调试指导</h2>
+
+    <div class="math-highlight">
+        <strong>数学思想精髓归纳：</strong>
+        <br>Q4_K_M 的算法之美在于<strong>“把离散的留给网格搜索，把连续的留给正规方程”</strong>。
+        <br>1. 取整的不可导性被外层 21 步网格遍历化解；
+        <br>2. 局部的几何最优被加权正规方程的 Cramer 闭式解在 $O(N)$ 复杂度内求得绝对极值；
+        <br>3. 离散化引起的尺度误差由“重量化回环”消除；
+        <br>4. 最终在不增加任何额外 bit 开销的前提下（依然严守 4.5 bpw），最大化榨取量化信噪比。
+    </div>
+
+    <div class="example">
+        <h4>🛠️ 调试断点定位清单</h4>
+        <p>可在 <code>doc/q4km_debug/Makefile</code> 启动 <code>make lldb</code> 后，验证以下数学量：</p>
+        <ul>
+            <li>在 <code>make_qkx2_quants</code> 内部计算 <code>D</code> 处下断点：打印 <code>sum_w, sum_l2, sum_l</code>，验证 $D = S_w S_{l2} - S_l^2 > 0$；</li>
+            <li>在 <code>cur_error &lt; best_error</code> 处下断点：打印 <code>is, this_scale, this_min, cur_error</code>，观察 21 轮候选里最佳偏置出现在哪个 $is$；</li>
+            <li>在 <code>quantize_row_q4_K_ref</code> 中第 3 步重量化处下断点：观察 <code>d_eff</code> 与前一步 <code>scales[j]</code> 的微小离散差距。</li>
+        </ul>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const headings = document.querySelectorAll('h2');
+    headings.forEach((h, i) => {
+        h.id = 'section-' + i;
+    });
+});
+</script>
+</body>
+</html>

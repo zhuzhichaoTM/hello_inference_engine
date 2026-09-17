@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Q4_K_M 量化算法动态演示</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #333;
+        padding: 20px;
+        min-height: 100vh;
+    }
+    .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    h1 {
+        text-align: center;
+        color: #667eea;
+        margin-bottom: 10px;
+        font-size: 2em;
+    }
+    .subtitle {
+        text-align: center;
+        color: #999;
+        margin-bottom: 30px;
+        font-size: 1.1em;
+    }
+    .controls {
+        display: flex;
+        justify-content: center;
+        gap: 15px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+    button {
+        padding: 12px 25px;
+        font-size: 1em;
+        border: none;
+        border-radius: 8px;
+        background: #667eea;
+        color: white;
+        cursor: pointer;
+        transition: all 0.3s;
+        font-weight: 600;
+    }
+    button:hover { background: #5568d3; transform: translateY(-2px); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .step-indicator {
+        text-align: center;
+        font-size: 1.2em;
+        font-weight: bold;
+        color: #764ba2;
+        margin-bottom: 15px;
+    }
+    .canvas-container {
+        background: #f8f9fa;
+        border-radius: 15px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    canvas {
+        display: block;
+        margin: 0 auto;
+        border-radius: 10px;
+    }
+    .explanation {
+        background: linear-gradient(135deg, #667eea15, #764ba215);
+        border-left: 5px solid #667eea;
+        padding: 20px;
+        border-radius: 10px;
+        font-size: 1.05em;
+        line-height: 1.8;
+    }
+    .formula {
+        font-family: 'Courier New', monospace;
+        background: #2d3748;
+        color: #48bb78;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 10px 0;
+        font-size: 1.1em;
+        text-align: center;
+    }
+    .highlight { background: #ffd700; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+
+    /* ===== 数学公式样式 ===== */
+    .math-formula {
+        font-family: 'KaTeX_Main', 'Times New Roman', serif;
+        background: linear-gradient(135deg, #1a202c, #2d3748);
+        color: #f7fafc;
+        padding: 20px;
+        border-radius: 10px;
+        margin: 15px 0;
+        font-size: 1.15em;
+        text-align: center;
+        border-left: 5px solid #48bb78;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .math-formula .tex {
+        display: block;
+        margin: 8px 0;
+        font-size: 1.2em;
+        letter-spacing: 0.5px;
+    }
+    .math-formula .tex-comment {
+        font-size: 0.85em;
+        color: #a0aec0;
+        font-style: italic;
+        margin-top: 8px;
+    }
+    .math-inline {
+        font-family: 'KaTeX_Main', 'Times New Roman', serif;
+        color: #764ba2;
+        font-weight: 600;
+        padding: 2px 8px;
+        background: #f7f7ff;
+        border-radius: 4px;
+        border: 1px solid #e0e7ff;
+    }
+    .math-highlight {
+        background: linear-gradient(120deg, #ffd70020, #ffed4e40);
+        padding: 12px;
+        border-radius: 8px;
+        border-left: 4px solid #f5576c;
+        margin: 12px 0;
+    }
+    .derivation {
+        background: #fffaf0;
+        border: 2px dashed #ed8936;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 10px 0;
+        font-size: 0.95em;
+        line-height: 1.8;
+    }
+    .derivation-step {
+        margin: 8px 0;
+        padding-left: 20px;
+        position: relative;
+    }
+    .derivation-step::before {
+        content: "→";
+        position: absolute;
+        left: 0;
+        color: #ed8936;
+        font-weight: bold;
+    }
+    .math-section {
+        margin: 15px 0;
+        padding: 12px;
+        background: #f8fafc;
+        border-radius: 8px;
+    }
+    .math-section h4 {
+        color: #667eea;
+        margin-bottom: 10px;
+        font-size: 1.05em;
+    }
+    .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+        margin: 10px 0;
+    }
+    .two-col .col {
+        background: white;
+        padding: 12px;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+    }
+    .progress-bar {
+        height: 6px;
+        background: #e0e0e0;
+        border-radius: 3px;
+        margin-bottom: 20px;
+        overflow: hidden;
+    }
+    .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        transition: width 0.3s;
+        width: 0%;
+    }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>Q4_K_M 量化算法原理</h1>
+    <div class="subtitle">一步步看懂 256 个权重如何压缩成 144 字节</div>
+
+    <div class="progress-bar">
+        <div class="progress-fill" id="progress"></div>
+    </div>
+
+    <div class="step-indicator" id="stepTitle">Step 0: 点击开始</div>
+
+    <div class="canvas-container">
+        <canvas id="canvas" width="1160" height="600"></canvas>
+    </div>
+
+    <div class="controls">
+        <button onclick="prevStep()">⬅ 上一步</button>
+        <button onclick="playPause()" id="playBtn">▶ 播放</button>
+        <button onclick="nextStep()">➡ 下一步</button>
+        <button onclick="reset()">🔄 重置</button>
+    </div>
+
+    <div class="explanation" id="explanation">
+        点击"播放"或"下一步"开始演示 Q4_K_M 量化算法的完整过程。
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let currentStep = 0;
+let animationId = null;
+let isPlaying = false;
+
+// 步骤定义
+const steps = [
+    {
+        title: "Step 0: 原始数据 - 256 个浮点权重",
+        explain: `
+<div class="math-section">
+    <h4>📊 数学模型</h4>
+    <p>输入：<span class="math-inline">x = {x₀, x₁, ..., x₂₅₅}</span>，256 个 f32 权重</p>
+    <p>每个权重占用 <b>4 字节</b>，共 <b>1024 字节</b>。</p>
+    <p>目标：压缩到 <b>144 字节</b>（4.5 bits per weight）。</p>
+</div>
+
+<div class="math-formula">
+    <div class="tex">目标压缩率：bpw = 144 × 8 / 256 = 4.5 bits/weight</div>
+    <div class="tex-comment">1024 字节 → 144 字节，压缩 7.1 倍</div>
+</div>`,
+        draw: drawInputWeights
+    },
+    {
+        title: "Step 1: 分成 8 个子块（每块 32 个权重）",
+        explain: `
+<div class="math-section">
+    <h4>📐 分组策略</h4>
+    <p>把 256 个权重切成 <span class="highlight">8 个子块</span>：</p>
+    <div class="math-formula">
+        <div class="tex">子块 j：x[j×32 : (j+1)×32]，j = 0, 1, ..., 7</div>
+        <div class="tex-comment">每个子块 32 个权重，独立优化量化参数</div>
+    </div>
+    <p>为什么分块？<b>LLM 权重分布不均匀</b>，分块可以自适应局部幅度。</p>
+</div>
+
+<div class="math-highlight">
+    <strong>关键洞察：</strong>不同子块的权重范围可能差异很大（如 -0.5~0.5 vs -2~3），
+    统一量化会损失精度；分组后每组自适应量化步长。
+</div>`,
+        draw: drawSubBlocks
+    },
+    {
+        title: "Step 2: 每个子块找最优 (scale, min) —— 子块级优化",
+        explain: `
+<div class="math-section">
+    <h4>🔍 核心优化问题（离散 + 连续混合）</h4>
+    <p>对每个子块，寻找线性量化器：</p>
+    <div class="math-formula">
+        <div class="tex">x[i] ≈ scale × L[i] + min</div>
+        <div class="tex-comment">L[i] ∈ {0, 1, ..., 15}（4-bit 整数）</div>
+    </div>
+    <p><b>scale</b> = 档位间距（步长），<b>min</b> = 底部偏移（处理非对称分布）。</p>
+</div>
+
+<div class="derivation">
+    <h4>📐 求解方法：离散穷举 + 连续闭式解</h4>
+    <div class="derivation-step">
+        <strong>外层（离散）：</strong>网格搜索 21 个候选 offset<br>
+        <code>offset = -1.0 + 0.1 × is, is = 0, 1, ..., 20</code><br>
+        <code>iscale = (offset + 15) / (max - min)</code><br>
+        → 生成量化级 <code>L[i] = round(iscale × (x[i] - min))</code>
+    </div>
+    <div class="derivation-step">
+        <strong>内层（连续）：</strong>固定 L[]，解正规方程<br>
+        <code>min E(scale, min) = Σ w[i] × (scale×L[i] + min - x[i])²</code><br>
+        <code>→ 2×2 线性方程闭式解</code>
+    </div>
+    <div class="derivation-step">
+        <strong>权重 w[i]：</strong><code>w[i] = av_x + |x[i]|</code>（ref 路径）<br>
+        → 幅度大的权重误差代价高，优先保护
+    </div>
+</div>
+
+<div class="math-highlight">
+    <strong>输出：</strong>8 个 f32 尺度 <span class="math-inline">s₀, s₁, ..., s₇</span>
+    和偏移 <span class="math-inline">m₀, m₁, ..., m₇</span>
+    （每子块的最优量化步长和偏移）
+</div>`,
+        draw: drawSubBlockOptimization
+    },
+    {
+        title: "Step 3: 全局归一化 —— 求超块尺度 d 和 dmin",
+        explain: `
+<div class="math-section">
+    <h4>📏 全局尺度计算（两级缩放）</h4>
+    <p>8 个 s₀..s₇ 是 f32 太贵，压缩成 6-bit：</p>
+    <div class="math-formula">
+        <div class="tex">max_scale = max(s₀, s₁, ..., s₇)</div>
+        <div class="tex">d = max_scale / 63&nbsp;&nbsp;&nbsp;(f16 存储)</div>
+        <div class="tex">sc[j] = round(s[j] / d)&nbsp;&nbsp;&nbsp;∈ [0, 63]</div>
+        <div class="tex-comment">同理处理 mins → dmin + m[0..7]</div>
+    </div>
+</div>
+
+<div class="math-highlight">
+    <strong>数学保证：</strong>最大子块的 <span class="math-inline">sc = 63</span>（满量程），
+    其余按比例编码；反量化时 <span class="math-inline">sc[j] × d ≈ s[j]</span>
+    （误差 ≤ 1/126）。
+</div>
+
+<div class="derivation">
+    <h4>💡 为什么用 6-bit？</h4>
+    <p>尺度误差被 32 个权重放大：<code>Δw = Δscale × q</code></p>
+    <ul>
+        <li>4-bit 尺度 → 相对误差 ~3.1%（与权重误差 2.5% 相当，<b>总误差翻倍</b>）</li>
+        <li><b>6-bit 尺度 → 相对误差 ~0.78%（恰好不构成瓶颈）</b></li>
+        <li>8-bit 尺度 → 相对误差 ~0.2%（收益递减，浪费 bit）</li>
+    </ul>
+    <p>结论：<b>6-bit 是 bpw-精度曲线的拐点</b>（精度 / 位宽最优权衡）。</p>
+</div>`,
+        draw: drawGlobalScale
+    },
+    {
+        title: "Step 4: 6-bit 打包进 12 字节 scales[]",
+        explain: `
+<div class="math-section">
+    <h4>📦 位打包结构</h4>
+    <p>8 组 (scale6, min6) 共 96 bit = 12 字节，特殊设计：</p>
+    <div class="math-formula">
+        <div class="tex">前 4 组 (j<4): 直接存低 6 位</div>
+        <div class="tex">scales[j]   = S[j] & 63</div>
+        <div class="tex">scales[j+4] = M[j] & 63</div>
+        <div class="tex-comment">后 4 组 (j≥4): 高低位分离</div>
+        <div class="tex">scales[j+4] = (S[j]&0xF) | ((M[j]&0xF) << 4)</div>
+        <div class="tex">scales[j-4] |= ((S[j] >> 4) << 6)</div>
+        <div class="tex">scales[j]   |= ((M[j] >> 4) << 6)</div>
+    </div>
+</div>
+
+<div class="math-highlight">
+    <strong>设计优势：</strong>
+    <ul>
+        <li><b>零浪费：</b>96 bit 完美填满 12 字节，无 padding</li>
+        <li><b>SIMD 友好：</b>字节级对齐，无分支解包</li>
+        <li><b>相对编码：</b>前 4 组完整存，后 4 组借高位（高 2 位）</li>
+    </ul>
+</div>`,
+        draw: drawBitPacking
+    },
+    {
+        title: "Step 5: 重量化回环 —— 用实际 d/dmin 重新算 4-bit 值",
+        explain: `
+<div class="math-highlight">
+    <strong>⚠️ 最容易被误解的一步：</strong><br>
+    第 2 步的 L[] 是用<b>理想 scale/min</b>算的，但实际存的是
+    <b>6-bit 化 + f16 化后</b>的系数，两者有量化误差！
+</div>
+
+<div class="math-section">
+    <h4>🔁 重量化公式</h4>
+    <div class="math-formula">
+        <div class="tex">d_eff = FP16_TO_FP32(d) × sc[j]</div>
+        <div class="tex">dm_eff = FP16_TO_FP32(dmin) × m[j]</div>
+        <div class="tex">L[i] = clamp(round((x[i] + dm_eff) / d_eff), 0, 15)</div>
+    </div>
+</div>
+
+<div class="derivation">
+    <h4>📐 为什么需要重量化？</h4>
+    <div class="derivation-step">
+        理想 scale（f32）→ 6-bit 量化 → f16 存储 → 反量化回 f32<br>
+        <code>ideal_scale ≈ d × sc[j]</code>，但存在舍入误差
+    </div>
+    <div class="derivation-step">
+        若不重量化，4-bit 值 L[] 与实际尺度不匹配，产生<b>系统性偏差</b>
+    </div>
+    <div class="derivation-step">
+        用实际存储的 <code>d_eff, dm_eff</code> 重新计算 L[]，保证一致性
+    </div>
+</div>`,
+        draw: drawRequantization
+    },
+    {
+        title: "Step 6: 4-bit 打包进 qs[128]",
+        explain: `
+<div class="math-section">
+    <h4>📦 4-bit 打包公式</h4>
+    <p>256 个 4-bit 量化值两两配对打包：</p>
+    <div class="math-formula">
+        <div class="tex">qs[l] = L[j+l] | (L[j+l+32] << 4)</div>
+        <div class="tex-comment">低半字节存 L[0..31]，高半字节存 L[32..63]</div>
+    </div>
+    <p>64 个值占 32 字节，256 个值占 <b>128 字节</b>。</p>
+</div>
+
+<div class="math-highlight">
+    <strong>存储效率：</strong>每个 4-bit 值占 0.5 字节，256 个共 128 字节。
+    半字节打包让 CPU/GPU 可以用位与/移位指令快速解包。
+</div>`,
+        draw: drawQuantPacking
+    },
+    {
+        title: "Step 7: 最终结构 —— 144 字节 block_q4_K",
+        explain: `
+<div class="math-section">
+    <h4>📐 完整数据结构</h4>
+    <div class="math-formula">
+        <div class="tex">
+            struct block_q4_K {<br>
+            &nbsp;&nbsp;ggml_half d;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// f16, 2 字节<br>
+            &nbsp;&nbsp;ggml_half dmin;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// f16, 2 字节<br>
+            &nbsp;&nbsp;uint8_t scales[12];&nbsp;&nbsp;// 12 字节<br>
+            &nbsp;&nbsp;uint8_t qs[128];&nbsp;&nbsp;&nbsp;&nbsp;// 128 字节<br>
+            };
+        </div>
+    </div>
+    <p>总计 <b>144 字节</b>，压缩比 <b>4.5 bpw</b>。</p>
+</div>
+
+<div class="two-col">
+    <div class="col">
+        <h4>内存分配</h4>
+        <p>• 权重数据 (qs): <b>128 B</b> (88.9%)</p>
+        <p>• 尺度元数据: <b>16 B</b> (11.1%)</p>
+    </div>
+    <div class="col">
+        <h4>压缩效果</h4>
+        <p>原始: 1024 B (f32)</p>
+        <p>量化: 144 B</p>
+        <p>压缩率: <b>7.1×</b></p>
+    </div>
+</div>`,
+        draw: drawFinalStructure
+    },
+    {
+        title: "Step 8: 反量化公式 —— 推理时还原权重",
+        explain: `
+<div class="math-section">
+    <h4>🔄 反量化（推理计算）</h4>
+    <p>推理时用两级缩放还原：</p>
+    <div class="math-formula">
+        <div class="tex">w = d × sc[j] × q - dmin × m[j]</div>
+    </div>
+    <p>其中：</p>
+    <ul>
+        <li><b>d</b> = f16 超块尺度（从 <code>block.d</code> 读出）</li>
+        <li><b>sc[j]</b> = 6-bit 子块尺度（从 <code>scales[]</code> 解包）</li>
+        <li><b>q</b> = 4-bit 量化值（从 <code>qs[]</code> 解包）</li>
+        <li><b>dmin</b> = f16 超块偏移（从 <code>block.dmin</code> 读出）</li>
+        <li><b>m[j]</b> = 6-bit 子块偏移（从 <code>scales[]</code> 解包）</li>
+    </ul>
+</div>
+
+<div class="math-highlight">
+    <strong>误差分析：</strong>
+    <div class="math-formula">
+        <div class="tex">w ≈ (d × sc[j]) × q - (dmin × m[j])</div>
+        <div class="tex-comment">误差源: 4-bit 量化 (~2.5%) + 6-bit 尺度 (~0.8%) ≈ 5~7% 相对 RMSE</div>
+    </div>
+    <p>典型误差：<b>5~7%</b> 相对 RMSE（实测 LLM 分布）。</p>
+</div>`,
+        draw: drawDequantization
+    }
+];
+
+// 生成演示数据
+const inputWeights = [];
+for (let i = 0; i < 256; i++) {
+    // 模拟 LLM 权重分布：高斯 + 少量离群值
+    let g = (Math.random() + Math.random() + Math.random() - 1.5) * 0.8;
+    if (Math.random() < 0.005) g *= 8;
+    inputWeights.push(g);
+}
+
+// ========== 绘图函数 ==========
+
+function drawInputWeights(t) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText('输入：256 个 f32 权重（1024 字节）', 50, 40);
+
+    // 画权重分布条形图
+    const barW = 3;
+    const baseY = 350;
+    ctx.fillStyle = '#667eea';
+    for (let i = 0; i < 256; i++) {
+        const h = inputWeights[i] * 50;
+        ctx.fillRect(50 + i * barW, baseY - h, barW - 1, h);
+    }
+    ctx.strokeStyle = '#ddd';
+    ctx.beginPath();
+    ctx.moveTo(50, baseY);
+    ctx.lineTo(50 + 256 * barW, baseY);
+    ctx.stroke();
+
+    // 标注
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#666';
+    ctx.fillText('每个权重占 4 字节 → 总共 1024 字节', 50, baseY + 40);
+    ctx.fillText('目标：压缩到 144 字节（压缩率 7.1×）', 50, baseY + 70);
+}
+
+function drawSubBlocks(t) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText('分成 8 个子块（每块 32 个权重）', 50, 40);
+
+    const blockW = 140;
+    const baseY = 350;
+    const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#feca57'];
+
+    for (let j = 0; j < 8; j++) {
+        ctx.fillStyle = colors[j];
+        ctx.fillRect(50 + j * blockW, baseY - 150, blockW - 10, 150);
+        ctx.font = 'bold 16px Arial';
+        ctx.fillStyle = 'white';
+        ctx.fillText(`子块 ${j}`, 70 + j * blockW, baseY - 170);
+
+        // 显示该块的 32 个权重样本
+        ctx.font = '11px monospace';
+        ctx.fillStyle = 'white';
+        const sampleIdx = Math.floor(j * 32 + 16);
+        ctx.fillText(`x[${j * 32}..${j * 32 + 31}]`, 60 + j * blockW, baseY - 120);
+        ctx.fillText(`例: x[${sampleIdx}]=${inputWeights[sampleIdx].toFixed(2)}`, 60 + j * blockW, baseY - 95);
+    }
+
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#666';
+    ctx.fillText('为什么分块？LLM 权重分布不均匀，分块可以自适应局部幅度。', 50, baseY + 60);
+}
+
+function drawSubBlockOptimization(t) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText('每个子块找最优 (scale, min) —— 网格搜索 + 加权最小二乘', 50, 40);
+
+    const j = Math.floor(t / 60) % 8;  // 动画循环显示不同子块
+    const y0 = 100;
+
+    // 画出该子块的 32 个权重
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText(`子块 ${j}: x[${j*32}..${j*32+31}]`, 50, y0);
+
+    const startIdx = j * 32;
+    const subWeights = inputWeights.slice(startIdx, startIdx + 32);
+    const min = Math.min(...subWeights);
+    const max = Math.max(...subWeights);
+
+    // 画散点
+    ctx.fillStyle = '#764ba2';
+    for (let i = 0; i < 32; i++) {
+        const x = 100 + i * 30;
+        const y = 250 - subWeights[i] * 80;
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // 画 16 个量化档位
+    ctx.strokeStyle = '#ddd';
+    for (let k = 0; k <= 15; k++) {
+        const y = 250 - (min + (max - min) * k / 15) * 80;
+        ctx.beginPath();
+        ctx.moveTo(80, y);
+        ctx.lineTo(1050, y);
+        ctx.stroke();
+        ctx.fillStyle = '#999';
+        ctx.fillText(`L=${k}`, 30, y + 4);
+    }
+
+    // 高亮当前搜索的候选
+    const isIdx = Math.floor(t / 20) % 21;
+    const offset = -1.0 + 0.1 * isIdx;
+    ctx.font = '16px Arial';
+    ctx.fillStyle = '#f5576c';
+    ctx.fillText(`网格搜索候选 ${isIdx}/20: offset=${offset.toFixed(1)}`, 80, 420);
+
+    ctx.fillStyle = '#667eea';
+    ctx.font = 'bold 15px Arial';
+    ctx.fillText(`scale = ${((max-min)/15).toFixed(3)}  min = ${min.toFixed(3)}`, 80, 460);
+    ctx.fillText('→ 通过加权最小二乘找到最优 scale/min', 80, 490);
+
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#666';
+    ctx.fillText('输出: s' + j + ' = ' + ((max-min)/15).toFixed(3) + ' (该子块的量化步长)', 50, 550);
+}
+
+function drawGlobalScale(t) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText('全局归一化：8 个 s0..s7 → 全局 d + 6-bit 编码', 50, 40);
+
+    // 假设 8 个尺度值（简化演示）
+    const scales = [0.08, 0.09, 0.12, 0.15, 0.18, 0.22, 0.25, 0.28];
+    const maxScale = Math.max(...scales);
+    const d = maxScale / 63;
+
+    const y0 = 100;
+    ctx.font = '14px monospace';
+
+    // 画 8 个尺度
+    for (let j = 0; j < 8; j++) {
+        const h = scales[j] * 300;
+        const x = 100 + j * 120;
+        ctx.fillStyle = j === 7 ? '#f5576c' : '#667eea';
+        ctx.fillRect(x, y0 + 250 - h, 80, h);
+
+        ctx.fillStyle = '#333';
+        ctx.fillText(`s${j} = ${scales[j].toFixed(2)}`, x, y0 + 280);
+        const sc = Math.round(scales[j] / d);
+        ctx.fillStyle = '#764ba2';
+        ctx.fillText(`sc[${j}] = ${sc}`, x + 10, y0 + 305);
+    }
+
+    // 高亮最大值
+    ctx.font = 'bold 16px Arial';
+    ctx.fillStyle = '#f5576c';
+    ctx.fillText(`max_scale = ${maxScale.toFixed(2)}`, 100, y0 - 20);
+    ctx.fillText(`d = ${d.toFixed(4)} (f16)`, 100, y0 + 10);
+
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#666';
+    ctx.fillText('sc[j] = round(s[j] / d)  → 最大子块编码为 63（满量程）', 100, y0 + 380);
+}
+
+function drawBitPacking(t) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText('12 字节 scales[12] 位打包', 50, 40);
+
+    const byteW = 90;
+    const y0 = 150;
+
+    // 画 12 个字节
+    for (let i = 0; i < 12; i++) {
+        const x = 50 + i * byteW;
+        ctx.strokeStyle = '#667eea';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y0, byteW - 5, 80);
+
+        ctx.font = 'bold 13px Arial';
+        ctx.fillStyle = '#333';
+        ctx.fillText(`scales[${i}]`, x, y0 + 30);
+
+        // 动画高亮
+        if (Math.floor(t / 30) % 12 === i) {
+            ctx.fillStyle = '#ffd70030';
+            ctx.fillRect(x, y0, byteW - 5, 80);
+        }
+    }
+
+    ctx.font = '13px monospace';
+    ctx.fillStyle = '#666';
+    ctx.fillText('前 8 字节 (scales[0..7]):', 50, 300);
+    ctx.fillText('  低 6 位存 S0..S7 / M0..M7', 50, 330);
+    ctx.fillText('  高 2 位借给后 4 组存高位', 50, 360);
+
+    ctx.fillText('后 4 字节 (scales[8..11]):', 50, 400);
+    ctx.fillText('  低 4 位: S4..S7 低 4 位', 50, 430);
+    ctx.fillText('  高 4 位: M4..M7 低 4 位', 50, 460);
+
+    ctx.fillStyle = '#f5576c';
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText('8 组 × (6-bit scale + 6-bit min) = 96 bit = 12 字节（零浪费）', 50, 510);
+}
+
+function drawRequantization(t) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText('重量化回环：用实际存储的 d/dmin 重新算 L[]', 50, 40);
+
+    const y0 = 100;
+
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#667eea';
+    ctx.fillText('第 1 步算出的理想 scale/min（f32）', 50, y0);
+    ctx.fillText('↓ 6-bit 化 + f16 化后变成存储值', 50, y0 + 30);
+
+    ctx.fillStyle = '#f5576c';
+    ctx.fillText('重量化：用实际存储值重新计算 L[]', 50, y0 + 70);
+
+    ctx.font = '13px monospace';
+    ctx.fillStyle = '#333';
+    ctx.fillText('d_eff  = FP16_TO_FP32(d) × sc[j]', 50, y0 + 110);
+    ctx.fillText('dm_eff = FP16_TO_FP32(dmin) × m[j]', 50, y0 + 140);
+    ctx.fillText('L[i] = clamp(round((x[i] + dm_eff) / d_eff), 0, 15)', 50, y0 + 170);
+
+    // 画示意图
+    ctx.strokeStyle = '#ddd';
+    for (let i = 0; i < 16; i++) {
+        const y = y0 + 200 + i * 20;
+        ctx.beginPath();
+        ctx.moveTo(100, y);
+        ctx.lineTo(1000, y);
+        ctx.stroke();
+        ctx.fillStyle = '#999';
+        ctx.fillText(`L=${i}`, 50, y + 5);
+    }
+
+    // 画权重点
+    const animIdx = Math.floor(t / 10) % 32;
+    for (let i = 0; i <= animIdx; i++) {
+        const x = 120 + i * 28;
+        const v = inputWeights[i];
+        const y = y0 + 200 + Math.abs(v * 200) % 320;
+        ctx.fillStyle = '#764ba2';
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#666';
+    ctx.fillText('✓ 保证 4-bit 值与块中存储的系数完全一致', 50, y0 + 380);
+}
+
+function drawQuantPacking(t) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText('4-bit 打包：256 个量化值 → qs[128]', 50, 40);
+
+    const y0 = 100;
+
+    // 画 L 数组
+    ctx.font = '13px Arial';
+    ctx.fillStyle = '#667eea';
+    ctx.fillText('L[] 数组（256 个 4-bit 值）:', 50, y0);
+
+    for (let i = 0; i < 64; i++) {
+        const x = 50 + (i % 32) * 35;
+        const y = y0 + 30 + Math.floor(i / 32) * 60;
+        ctx.fillStyle = '#764ba2';
+        ctx.fillRect(x, y, 30, 30);
+        ctx.fillStyle = 'white';
+        ctx.fillText(`L${i}`, x + 5, y + 20);
+    }
+
+    // 打包过程
+    ctx.fillStyle = '#f5576c';
+    ctx.fillText('打包:', 50, y0 + 180);
+    ctx.font = '13px monospace';
+    ctx.fillText('qs[l] = L[j+l] | (L[j+l+32] << 4)', 50, y0 + 210);
+
+    // 画 qs 数组
+    ctx.fillStyle = '#667eea';
+    ctx.fillText('qs[] 数组（128 字节）:', 50, y0 + 260);
+
+    for (let i = 0; i < 32; i++) {
+        const x = 50 + (i % 32) * 35;
+        const y = y0 + 290;
+        ctx.fillStyle = '#43e97b';
+        ctx.fillRect(x, y, 30, 30);
+        ctx.fillStyle = 'white';
+        ctx.font = '11px Arial';
+        ctx.fillText('qs', x + 8, y + 15);
+    }
+
+    ctx.fillStyle = '#666';
+    ctx.font = '14px Arial';
+    ctx.fillText('低半字节: L[0..31]，高半字节: L[32..63]', 50, y0 + 350);
+}
+
+function drawFinalStructure(t) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText('最终结构：block_q4_K（144 字节）', 50, 40);
+
+    const x0 = 200;
+    const y0 = 100;
+
+    // 画内存布局
+    ctx.strokeStyle = '#667eea';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x0, y0, 600, 400);
+
+    // d
+    ctx.fillStyle = '#ffd700';
+    ctx.fillRect(x0, y0, 600, 40);
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText('d (f16)', x0 + 10, y0 + 25);
+    ctx.fillText('2 字节', x0 + 500, y0 + 25);
+
+    // dmin
+    ctx.fillStyle = '#feca57';
+    ctx.fillRect(x0, y0 + 40, 600, 40);
+    ctx.fillStyle = '#333';
+    ctx.fillText('dmin (f16)', x0 + 10, y0 + 65);
+    ctx.fillText('2 字节', x0 + 500, y0 + 65);
+
+    // scales
+    ctx.fillStyle = '#43e97b';
+    ctx.fillRect(x0, y0 + 80, 600, 80);
+    ctx.fillStyle = '#333';
+    ctx.fillText('scales[12]', x0 + 10, y0 + 115);
+    ctx.fillText('8×(6-bit sc + 6-bit m)', x0 + 10, y0 + 140);
+    ctx.fillText('12 字节', x0 + 500, y0 + 115);
+
+    // qs
+    ctx.fillStyle = '#4facfe';
+    ctx.fillRect(x0, y0 + 160, 600, 240);
+    ctx.fillStyle = 'white';
+    ctx.fillText('qs[128]', x0 + 10, y0 + 200);
+    ctx.fillText('256 × 4-bit 量化值', x0 + 10, y0 + 230);
+    ctx.fillText('128 字节', x0 + 500, y0 + 200);
+
+    // 标注
+    ctx.font = 'bold 16px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText('总计: 2 + 2 + 12 + 128 = 144 字节', x0, y0 + 430);
+    ctx.fillText('压缩率: 1024 → 144 = 7.1×', x0, y0 + 460);
+    ctx.fillStyle = '#764ba2';
+    ctx.fillText('4.5 bits per weight', x0, y0 + 490);
+}
+
+function drawDequantization(t) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText('反量化公式：推理时还原权重', 50, 40);
+
+    const y0 = 150;
+
+    // 公式
+    ctx.font = 'bold 20px monospace';
+    ctx.fillStyle = '#764ba2';
+    ctx.fillText('w = d × sc[j] × q - dmin × m[j]', 150, y0);
+
+    // 分解说明
+    ctx.font = '15px Arial';
+    ctx.fillStyle = '#333';
+    const parts = [
+        { label: 'd', desc: 'f16 超块尺度', y: y0 + 50 },
+        { label: 'sc[j]', desc: '6-bit 子块尺度', y: y0 + 90 },
+        { label: 'q', desc: '4-bit 量化值', y: y0 + 130 },
+        { label: 'dmin', desc: 'f16 超块偏移', y: y0 + 170 },
+        { label: 'm[j]', desc: '6-bit 子块偏移', y: y0 + 210 }
+    ];
+
+    parts.forEach((p, i) => {
+        ctx.fillStyle = ['#ffd700', '#feca57', '#43e97b', '#4facfe', '#f093fb'][i];
+        ctx.fillRect(100, p.y - 20, 60, 30);
+        ctx.fillStyle = '#333';
+        ctx.font = 'bold 15px Arial';
+        ctx.fillText(p.label, 120, p.y);
+        ctx.font = '14px Arial';
+        ctx.fillStyle = '#666';
+        ctx.fillText(p.desc, 200, p.y);
+    });
+
+    // 误差说明
+    ctx.font = '16px Arial';
+    ctx.fillStyle = '#f5576c';
+    ctx.fillText('典型误差: 5~7% 相对 RMSE', 150, y0 + 280);
+}
+
+// ========== 控制逻辑 ==========
+
+function updateDisplay() {
+    const step = steps[currentStep];
+    document.getElementById('stepTitle').textContent = step.title;
+    document.getElementById('explanation').innerHTML = step.explain;
+    document.getElementById('progress').style.width = ((currentStep + 1) / steps.length * 100) + '%';
+}
+
+function animate() {
+    const t = performance.now() / 100;
+    steps[currentStep].draw(t);
+    if (isPlaying) {
+        setTimeout(() => {
+            nextStep();
+            if (currentStep < steps.length - 1) animate();
+            else isPlaying = false;
+        }, 3000); // 每步 3 秒
+    } else {
+        requestAnimationFrame(animate);
+    }
+}
+
+function nextStep() {
+    if (currentStep < steps.length - 1) {
+        currentStep++;
+        updateDisplay();
+        if (!isPlaying) steps[currentStep].draw(0);
+    }
+}
+
+function prevStep() {
+    if (currentStep > 0) {
+        currentStep--;
+        updateDisplay();
+        if (!isPlaying) steps[currentStep].draw(0);
+    }
+}
+
+function playPause() {
+    isPlaying = !isPlaying;
+    document.getElementById('playBtn').textContent = isPlaying ? '⏸ 暂停' : '▶ 播放';
+    if (isPlaying) animate();
+}
+
+function reset() {
+    currentStep = 0;
+    isPlaying = false;
+    document.getElementById('playBtn').textContent = '▶ 播放';
+    updateDisplay();
+    steps[currentStep].draw(0);
+}
+
+// 初始化
+updateDisplay();
+steps[currentStep].draw(0);
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
