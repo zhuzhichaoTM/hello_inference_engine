@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qwen3.8-27B 模型卡片 · 中英对照翻译</title>
+<style>
+  :root{
+    --bg:#ffffff;
+    --bg-soft:#f7f8fa;
+    --bg-code:#f6f7f9;
+    --line:#e5e7eb;
+    --line-soft:#eef0f3;
+    --ink:#1f2328;
+    --ink-2:#4a5158;
+    --ink-3:#7d858e;
+    --en:#3f4b5b;
+    --accent:#615ced;
+    --accent-soft:#efedff;
+    --warn:#fff8e6;
+    --warn-line:#f0d999;
+    --best:#c0392b;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+    font-size:15px;line-height:1.75;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:0 28px 100px}
+
+  header.hero{padding:56px 0 32px;border-bottom:1px solid var(--line)}
+  .tag{display:inline-block;font-size:12px;letter-spacing:.08em;color:var(--accent);background:var(--accent-soft);
+       padding:4px 10px;border-radius:999px;font-weight:600}
+  h1{font-size:30px;margin:14px 0 8px;letter-spacing:-.01em}
+  .sub{color:var(--ink-3);font-size:13.5px}
+  .sub a{color:var(--ink-3)}
+
+  /* toolbar */
+  .toolbar{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);padding:10px 0;margin-bottom:8px}
+  .toolbar-inner{max-width:1180px;margin:0 auto;padding:0 28px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .btn{border:1px solid var(--line);background:#fff;color:var(--ink-2);border-radius:8px;
+    padding:6px 12px;font-size:13px;cursor:pointer;font-family:inherit}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .spacer{flex:1}
+  .hint{font-size:12px;color:var(--ink-3)}
+
+  /* section */
+  section{padding:34px 0;border-bottom:1px solid var(--line-soft)}
+  h2{font-size:21px;margin:0 0 4px;display:flex;align-items:baseline;gap:10px}
+  h2 .num{font-size:12px;color:var(--accent);font-weight:700;letter-spacing:.05em}
+  h2 .en-title{font-size:13px;color:var(--ink-3);font-weight:400}
+  h3{font-size:16px;margin:26px 0 10px;color:var(--ink);display:flex;gap:8px;align-items:baseline}
+  h3 .en-title{font-size:12.5px;color:var(--ink-3);font-weight:400}
+  h4{font-size:14px;margin:18px 0 8px;color:var(--ink-2)}
+  h4 .en-title{font-size:12px;color:var(--ink-3);font-weight:400}
+
+  /* pair block */
+  .pair{border-left:3px solid var(--line);padding:2px 0 2px 16px;margin:14px 0}
+  .pair:hover{border-left-color:var(--accent)}
+  .zh{margin:0 0 6px}
+  .en{margin:0;color:var(--en);font-size:13.5px;line-height:1.7;
+      font-family:"SF Mono",ui-monospace,"PingFang SC",Menlo,Consolas,monospace}
+  body.hide-en .en{display:none}
+  body.hide-zh .zh{display:none}
+
+  blockquote.pair{background:var(--bg-soft);border-left-color:var(--warn-line);border-radius:0 8px 8px 0;
+    padding:12px 16px;margin:14px 0}
+  blockquote.pair .zh{font-size:14.5px}
+
+  ul.bi{list-style:none;padding:0;margin:10px 0}
+  ul.bi li{border-left:3px solid var(--line);padding:10px 0 10px 16px;margin:8px 0}
+  ul.bi li:hover{border-left-color:var(--accent)}
+  ul.bi li .zh strong{color:var(--accent)}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:center}
+  th{background:var(--bg-soft);font-weight:600;color:var(--ink-2)}
+  td.cap,th.cap{text-align:left;background:#fcfcfd}
+  td.best{color:var(--best);font-weight:700}
+  .cat{background:#fbfbfe;font-weight:600;color:var(--ink-2)}
+  caption{caption-side:top;text-align:left;font-size:12.5px;color:var(--ink-3);padding-bottom:6px}
+
+  ol.notes,ul.notes{font-size:13px;color:var(--ink-2);padding-left:22px}
+  ol.notes li,ul.notes li{margin:6px 0}
+  ol.notes .en,ul.notes .en{display:block;color:var(--ink-3);font-size:12.5px;font-family:inherit}
+
+  pre{background:var(--bg-code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;
+    overflow-x:auto;font-size:12.5px;line-height:1.65;margin:10px 0;
+    font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+  code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+  p code,li code,td code{background:var(--bg-code);padding:1px 5px;border-radius:4px;font-size:12.5px;color:#a13bd6}
+  .code-cap{font-size:12.5px;color:var(--ink-3);margin:14px 0 2px}
+
+  .note-box{background:var(--warn);border:1px solid var(--warn-line);border-radius:8px;padding:12px 14px;
+    font-size:13px;color:#6b5510;margin:14px 0}
+  .note-box .en{color:#8a7020}
+
+  .glossary td{text-align:left;font-size:13px}
+  .glossary th{text-align:left}
+
+  footer{padding:36px 0;color:var(--ink-3);font-size:12.5px}
+  .toc{columns:2;column-gap:36px;font-size:13.5px;margin-top:12px}
+  .toc a{color:var(--ink-2);text-decoration:none;display:block;padding:3px 0}
+  .toc a:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <div class="toolbar-inner">
+    <button class="btn" id="btnEn">隐藏英文</button>
+    <button class="btn" id="btnZh">隐藏中文</button>
+    <span class="spacer"></span>
+    <span class="hint">逐段中英对照 · 术语统一见第 1 节</span>
+  </div>
+</div>
+
+<div class="wrap">
+
+<header class="hero">
+  <span class="tag">HUGGING FACE MODEL CARD · 中英对照</span>
+  <h1>Qwen3.8-27B 模型介绍 · 逐段对照翻译</h1>
+  <p class="sub">
+    原文来源：<a href="https://huggingface.co/Qwen/Qwen3.8-27B">huggingface.co/Qwen/Qwen3.8-27B</a>　·　
+    翻译范围：README 模型卡全文（引言 / 亮点 / 模型概览 / 基准测试 / 快速上手 / 最佳实践 / 引用）　·　
+    术语一致性以 <a href="#glossary">§1 术语对照表</a> 为准
+  </p>
+  <nav class="toc">
+    <a href="#glossary">§1 术语对照表（一致性锚点）</a>
+    <a href="#intro">§2 仓库说明与引言</a>
+    <a href="#highlights">§3 Qwen3.8 亮点</a>
+    <a href="#overview">§4 模型概览</a>
+    <a href="#bench-text">§5 文本性能基准</a>
+    <a href="#bench-vl">§6 视觉语言性能基准</a>
+    <a href="#quickstart">§7 快速上手</a>
+    <a href="#best">§8 最佳实践</a>
+    <a href="#citation">§9 引用</a>
+  </nav>
+</header>
+
+<!-- ============ §1 GLOSSARY ============ -->
+<section id="glossary">
+  <h2><span class="num">§1</span>术语对照表<span class="en-title">Terminology Glossary</span></h2>
+  <p class="zh">统一全篇译法，避免同一概念出现多种中文表述。缩写与专有名词（模型名、benchmark 名、参数名、框架名）一律保留原文。</p>
+
+  <h3>模型与架构<span class="en-title">Model &amp; Architecture</span></h3>
+  <table class="glossary">
+    <tr><th style="width:34%">English</th><th style="width:30%">中文（统一译法）</th><th>说明</th></tr>
+    <tr><td>post-trained model</td><td>后训练模型</td><td>指预训练之后的对齐/指令微调阶段产物</td></tr>
+    <tr><td>open-model family</td><td>开源模型系列</td><td>不译作"开放模型"</td></tr>
+    <tr><td>dense model</td><td>稠密模型</td><td>对应 MoE 稀疏模型</td></tr>
+    <tr><td>native vision-language model</td><td>原生视觉语言模型</td><td>强调非外挂视觉模块</td></tr>
+    <tr><td>Causal Language Model with Vision Encoder</td><td>带视觉编码器的因果语言模型</td><td>架构类型</td></tr>
+    <tr><td>Pre-training &amp; Post-training</td><td>预训练与后训练</td><td>训练阶段</td></tr>
+    <tr><td>Hidden Dimension / Number of Layers</td><td>隐藏层维度 / 层数</td><td>—</td></tr>
+    <tr><td>Token Embedding / LM Output</td><td>词表规模（Token 嵌入 / LM 输出）</td><td>248,320（已补齐）</td></tr>
+    <tr><td>Hidden Layout</td><td>隐藏层结构</td><td>—</td></tr>
+    <tr><td>Gated DeltaNet / Gated Attention</td><td>门控 DeltaNet / 门控注意力</td><td>保留组件原名</td></tr>
+    <tr><td>Linear Attention Heads / Attention Heads</td><td>线性注意力头数 / 注意力头数</td><td>—</td></tr>
+    <tr><td>Head Dimension</td><td>头维度</td><td>—</td></tr>
+    <tr><td>Rotary Position Embedding Dimension</td><td>旋转位置编码维度</td><td>RoPE 维度</td></tr>
+    <tr><td>Feed Forward Network / Intermediate Dimension</td><td>前馈网络 / 中间层维度</td><td>—</td></tr>
+    <tr><td>MTP (Multi-Token Prediction)</td><td>多 token 预测（MTP）</td><td>首次出现括注全称</td></tr>
+    <tr><td>Context Length</td><td>上下文长度</td><td>—</td></tr>
+  </table>
+
+  <h3>能力与任务<span class="en-title">Capabilities &amp; Tasks</span></h3>
+  <table class="glossary">
+    <tr><th style="width:34%">English</th><th style="width:30%">中文（统一译法）</th><th>说明</th></tr>
+    <tr><td>long-horizon agentic tasks</td><td>长程智能体任务</td><td>全篇统一，不译"长周期/长期"</td></tr>
+    <tr><td>agentic coding / agentic terminal coding</td><td>智能体编码 / 终端智能体编码</td><td>—</td></tr>
+    <tr><td>repo-level code generation</td><td>仓库级代码生成</td><td>—</td></tr>
+    <tr><td>professional work</td><td>专业工作</td><td>与 professional job tasks（专业岗位任务）区分</td></tr>
+    <tr><td>frontier agentic tasks</td><td>前沿智能体任务</td><td>—</td></tr>
+    <tr><td>instruction following</td><td>指令遵循</td><td>—</td></tr>
+    <tr><td>scientific / multidisciplinary reasoning</td><td>科学推理 / 多学科推理</td><td>—</td></tr>
+    <tr><td>competitive coding</td><td>竞赛编程</td><td>—</td></tr>
+    <tr><td>computer use / browser use / mobile use</td><td>计算机操作 / 浏览器操作 / 移动端操作</td><td>—</td></tr>
+    <tr><td>application recreation</td><td>应用复刻</td><td>—</td></tr>
+    <tr><td>multimodal tool use</td><td>多模态工具使用</td><td>—</td></tr>
+    <tr><td>visual web development</td><td>视觉网页开发</td><td>由视觉输入生成网页</td></tr>
+    <tr><td>document intelligence</td><td>文档智能</td><td>—</td></tr>
+    <tr><td>real-world perception</td><td>真实场景感知</td><td>—</td></tr>
+    <tr><td>embodied intelligence</td><td>具身智能</td><td>—</td></tr>
+    <tr><td>end-to-end task completion</td><td>端到端任务完成</td><td>—</td></tr>
+    <tr><td>environment feedback</td><td>环境反馈</td><td>—</td></tr>
+    <tr><td>downstream compatibility</td><td>下游兼容性</td><td>—</td></tr>
+  </table>
+
+  <h3>推理与参数<span class="en-title">Inference &amp; Parameters</span></h3>
+  <table class="glossary">
+    <tr><th style="width:34%">English</th><th style="width:30%">中文（统一译法）</th><th>说明</th></tr>
+    <tr><td>thinking mode / thinking content</td><td>思考模式 / 思考内容</td><td>—</td></tr>
+    <tr><td>Instruct (or non-thinking) mode</td><td>指令（或非思考）模式</td><td>全篇统一</td></tr>
+    <tr><td>flexible thinking control</td><td>灵活的思考控制</td><td>—</td></tr>
+    <tr><td>reasoning depth / reasoning effort</td><td>推理深度 / 推理强度</td><td><code>reasoning_effort</code> 为参数名，保留原文</td></tr>
+    <tr><td>preserved thinking</td><td>保留思考</td><td><code>preserve_thinking</code> 保留原文</td></tr>
+    <tr><td>reasoning trace / reasoning content</td><td>推理轨迹 / 推理内容</td><td>—</td></tr>
+    <tr><td>sampling parameters</td><td>采样参数</td><td>—</td></tr>
+    <tr><td>presence_penalty / repetition_penalty</td><td>存在惩罚 / 重复惩罚</td><td>参数名保留</td></tr>
+    <tr><td>language mixing</td><td>语言混杂</td><td>—</td></tr>
+    <tr><td>KV cache utilization</td><td>KV 缓存利用率</td><td>—</td></tr>
+    <tr><td>serving engine / inference framework</td><td>推理服务引擎 / 推理框架</td><td>—</td></tr>
+    <tr><td>throughput / latency</td><td>吞吐 / 延迟</td><td>—</td></tr>
+    <tr><td>RoPE scaling / scaling factor</td><td>RoPE 缩放 / 缩放因子</td><td>YaRN 为算法名，保留</td></tr>
+    <tr><td>harness (Claude Code harness)</td><td>执行框架（Claude Code 执行框架）</td><td>不译"马具"</td></tr>
+    <tr><td>reward hacking</td><td>奖励黑客（钻空子）</td><td>首次出现括注</td></tr>
+    <tr><td>in-house benchmark</td><td>内部自建基准</td><td>—</td></tr>
+    <tr><td>Pass@1 / Pass@3</td><td>Pass@1 / Pass@3</td><td>保留；释义为"至少一次通过率"</td></tr>
+  </table>
+</section>
+
+<!-- ============ §2 INTRO ============ -->
+<section id="intro">
+  <h2><span class="num">§2</span>仓库说明与引言<span class="en-title">Repository Notes &amp; Introduction</span></h2>
+
+  <blockquote class="pair">
+    <p class="zh">本仓库包含后训练模型在 Hugging Face Transformers 格式下的模型权重与配置文件。<br>这些产物兼容 Hugging Face Transformers、vLLM、SGLang、TokenSpeed 等框架。</p>
+    <p class="en">This repository contains model weights and configuration files for the post-trained model in the Hugging Face Transformers format. These artifacts are compatible with Hugging Face Transformers, vLLM, SGLang, TokenSpeed, etc.</p>
+  </blockquote>
+
+  <blockquote class="pair">
+    <p class="zh">对于希望获得托管式、可扩展推理服务而无需自行维护基础设施的用户，官方 Qwen API 服务由 <a href="https://www.qwencloud.com">Qwen Cloud</a> 提供。其中 <strong>Qwen3.8-27B</strong> 将以托管版本形式提供，并具备更多生产级特性，例如默认 100 万 token 上下文长度、官方内置工具。更多信息请参阅 <a href="https://www.qwencloud.com/models/qwen3.8-27b">Qwen3.8-27B 概览</a>。该服务即将上线，敬请期待后续更新。</p>
+    <p class="en">For users seeking managed, scalable inference without infrastructure maintenance, the official Qwen API service is provided by Qwen Cloud. In particular, <strong>Qwen3.8-27B</strong> will be available as a hosted version with more production features, e.g., 1M context length by default, official built-in tools. For more information, please refer to the Qwen3.8-27B Overview. The service is coming soon. Stay tuned for updates.</p>
+  </blockquote>
+
+  <div class="pair">
+    <p class="zh">继 Qwen3.5 与 Qwen3.6 系列在社区被广泛采用之后，我们很高兴地推出 Qwen3.8 —— Qwen 开源模型系列中迄今能力最强的一代。</p>
+    <p class="en">Following the widespread community adoption of the Qwen3.5 and Qwen3.6 series, we are pleased to introduce Qwen3.8, the most capable generation in the Qwen open-model family to date.</p>
+  </div>
+
+  <div class="pair">
+    <p class="zh">Qwen3.8 构建于 Qwen3.5 的架构基础之上，在编码、专业工作、研究以及长程智能体任务上实现了显著提升。Qwen3.8-27B 将这些进展浓缩进一个紧凑、易于部署的稠密模型：它是一个能理解图像与视频的原生视觉语言模型，支持灵活的思考控制，旨在以更高的可靠性把复杂的多步骤任务从头到尾执行完成。</p>
+    <p class="en">Built on the architectural foundation of Qwen3.5, Qwen3.8 delivers substantial gains across coding, professional work, research, and long-horizon agentic tasks. Qwen3.8-27B brings these advances to a compact, deployment-friendly dense model: a native vision-language model that understands images and videos, with flexible thinking control, designed to carry complex, multi-step tasks through to completion with greater reliability.</p>
+  </div>
+</section>
+
+<!-- ============ §3 HIGHLIGHTS ============ -->
+<section id="highlights">
+  <h2><span class="num">§3</span>Qwen3.8 亮点<span class="en-title">Qwen3.8 Highlights</span></h2>
+  <div class="pair">
+    <p class="zh">Qwen3.8-27B 具备以下增强特性：</p>
+    <p class="en">Qwen3.8-27B features the following enhancements:</p>
+  </div>
+  <ul class="bi">
+    <li>
+      <p class="zh"><strong>核心能力</strong>：在编码、专业工作、研究与长程智能体任务上实现全面改进。</p>
+      <p class="en"><strong>Core Capabilities</strong>: Comprehensive improvements across coding, professional work, research, and long-horizon agentic tasks.</p>
+    </li>
+    <li>
+      <p class="zh"><strong>智能体执行</strong>：更强的自主规划能力与更好的环境反馈处理，从而实现更可靠的端到端任务完成。</p>
+      <p class="en"><strong>Agent Execution</strong>: Stronger autonomous planning and better handling of environment feedback, leading to more reliable end-to-end task completion.</p>
+    </li>
+    <li>
+      <p class="zh"><strong>下游兼容性</strong>：更广泛地支持主流执行框架与开发工具，更容易集成进你现有的技术栈。</p>
+      <p class="en"><strong>Downstream Compatibility</strong>: Broader support for popular harnesses and development tools, making it easier to integrate into your existing stack.</p>
+    </li>
+    <li>
+      <p class="zh"><strong>灵活的思考控制</strong>：思考模式默认开启，并可按请求关闭；推理深度可通过 <code>reasoning_effort</code> 调节，历史消息中的推理上下文可通过 <code>preserve_thinking</code> 予以保留。</p>
+      <p class="en"><strong>Flexible Thinking Control</strong>: Thinking mode is on by default and can be disabled per request; reasoning depth can be tuned with <code>reasoning_effort</code>, and reasoning context from historical messages is retained via <code>preserve_thinking</code>.</p>
+    </li>
+    <li>
+      <p class="zh"><strong>视觉语言理解</strong>：原生支持图像与视频理解，覆盖从 STEM 图表、文档到小时级长视频的场景。</p>
+      <p class="en"><strong>Vision-Language Understanding</strong>: Native support for image and video understanding, from STEM diagrams and documents to hour-scale videos.</p>
+    </li>
+  </ul>
+</section>
+
+<!-- ============ §4 OVERVIEW ============ -->
+<section id="overview">
+  <h2><span class="num">§4</span>模型概览<span class="en-title">Model Overview</span></h2>
+  <table class="glossary">
+    <tr><th style="width:38%">项目（中文）</th><th style="width:30%">Item（English）</th><th>值</th></tr>
+    <tr><td>类型</td><td>Type</td><td>带视觉编码器的因果语言模型（Causal Language Model with Vision Encoder）</td></tr>
+    <tr><td>训练阶段</td><td>Training Stage</td><td>预训练与后训练（Pre-training &amp; Post-training）</td></tr>
+    <tr><td>参数量</td><td>Number of Parameters</td><td>27B</td></tr>
+    <tr><td>隐藏层维度</td><td>Hidden Dimension</td><td>5120</td></tr>
+    <tr><td>词表规模（Token 嵌入）</td><td>Token Embedding</td><td>248,320（已补齐 / Padded）</td></tr>
+    <tr><td>层数</td><td>Number of Layers</td><td>64</td></tr>
+    <tr><td>隐藏层结构</td><td>Hidden Layout</td><td>16 ×（3 ×（门控 DeltaNet → FFN）→ 1 ×（门控注意力 → FFN））</td></tr>
+    <tr><td>门控 DeltaNet：线性注意力头数</td><td>Gated DeltaNet: Number of Linear Attention Heads</td><td>V 为 48，QK 为 16</td></tr>
+    <tr><td>门控 DeltaNet：头维度</td><td>Gated DeltaNet: Head Dimension</td><td>128</td></tr>
+    <tr><td>门控注意力：注意力头数</td><td>Gated Attention: Number of Attention Heads</td><td>Q 为 24，KV 为 4</td></tr>
+    <tr><td>门控注意力：头维度</td><td>Gated Attention: Head Dimension</td><td>256</td></tr>
+    <tr><td>旋转位置编码维度</td><td>Rotary Position Embedding Dimension</td><td>64</td></tr>
+    <tr><td>前馈网络：中间层维度</td><td>Feed Forward Network: Intermediate Dimension</td><td>17,408</td></tr>
+    <tr><td>LM 输出维度</td><td>LM Output</td><td>248,320（已补齐 / Padded）</td></tr>
+    <tr><td>多 token 预测（MTP）</td><td>MTP (Multi-Token Prediction)</td><td>以多步方式训练（trained with multiple steps）</td></tr>
+    <tr><td>上下文长度</td><td>Context Length</td><td>原生 262,144 token，可扩展至 1,000,000 token</td></tr>
+  </table>
+</section>
+
+<!-- ============ §5 TEXT BENCH ============ -->
+<section id="bench-text">
+  <h2><span class="num">§5</span>文本性能<span class="en-title">Text Performance</span></h2>
+  <table>
+    <caption>表 1　文本基准测试结果（红色加粗为该行最优；<code>--</code> 表示结果暂缺或不适用）</caption>
+    <tr>
+      <th class="cap">能力类别</th><th class="cap">基准测试</th>
+      <th>Qwen3.8-27B</th><th>Qwen3.6-27B</th><th>Qwen3.7-Plus</th><th>Muse Glimmer-30B</th><th>Opus4.6 Max</th>
+    </tr>
+    <tr><td class="cat" rowspan="4">编码<br>Coding</td><td class="cap">终端智能体编码 — Terminal Bench 2.1 (Terminus)</td><td>73.0</td><td>63.4</td><td>64.0</td><td>51.7</td><td class="best">78.2</td></tr>
+    <tr><td class="cap">智能体编码 — SWE-bench Pro</td><td class="best">61.7</td><td>53.5</td><td>57.6</td><td>51.2</td><td>53.4</td></tr>
+    <tr><td class="cap">仓库级代码生成 — NL2Repo-Bench</td><td>42.3</td><td>36.2</td><td>41.1</td><td>--</td><td class="best">47.6</td></tr>
+    <tr><td class="cap">智能体编码 — DeepSWE 1.1</td><td class="best">42.2</td><td>13.3</td><td>14.2</td><td>--</td><td>--</td></tr>
+    <tr><td class="cat" rowspan="1">软件工程<br>Software engineering</td><td class="cap">QwenSWEBench</td><td class="best">79.0</td><td>49.3</td><td>59.2</td><td>--</td><td>63.8</td></tr>
+    <tr><td class="cat" rowspan="3">智能体<br>Agent</td><td class="cap">长程办公任务 — CoWorkBench</td><td class="best">70.7</td><td>61.0</td><td>65.1</td><td>--</td><td>68.2</td></tr>
+    <tr><td class="cap">专业岗位任务 — JobBench</td><td class="best">33.4</td><td>21.8</td><td>27.6</td><td>--</td><td>--</td></tr>
+    <tr><td class="cap">前沿智能体任务 — Agents' Last Exam</td><td><span class="best">Pass@1 20.4</span> / <span class="best">Score 42.9</span></td><td>Pass@1 10.6 / Score 27.3</td><td>Pass@1 13.2 / Score 33.6</td><td>--</td><td>--</td></tr>
+    <tr><td class="cat" rowspan="4">通用<br>General</td><td class="cap">指令遵循 — IFBench</td><td class="best">79.5</td><td>69.1</td><td>79.1</td><td>77.0</td><td>62.5</td></tr>
+    <tr><td class="cap">科学推理 — GPQA Diamond</td><td>89.2</td><td>87.8</td><td>90.3</td><td>83.5</td><td class="best">91.3</td></tr>
+    <tr><td class="cap">多学科推理 — HLE</td><td>30.8</td><td>24.0</td><td>34.7</td><td>22.0</td><td class="best">40.0</td></tr>
+    <tr><td class="cap">竞赛编程 — LiveCodeBench v6</td><td class="best">90.3</td><td>83.9</td><td>89.6</td><td>--</td><td>88.8</td></tr>
+  </table>
+
+  <h4>注释<span class="en-title">Notes</span></h4>
+  <ol class="notes">
+    <li><span class="zh">SWE-bench Pro：除 Opus4.6 Max 使用官方公布分数外，所有模型均在 Claude Code 执行框架下评测，参数为 <code>temp=1.0</code>、<code>top_p=0.95</code>、256K 上下文窗口。存在问题的任务已被修正，所有基线模型均在修正后的基准上重新评测。</span>
+      <span class="en">SWE-bench Pro: Except for Opus4.6 Max, which uses the officially reported score, all models are evaluated with the Claude Code harness at temp=1.0, top_p=0.95, and a 256K context window. Problematic tasks were corrected, and all baseline models were re-evaluated on the refined benchmark.</span></li>
+    <li><span class="zh">NL2Repo-Bench：使用 Claude Code 执行框架评测。为防止奖励黑客（钻空子）行为，我们禁用了试图访问指定代码仓库的 Bash 命令，例如 <code>pip download</code>、<code>pip install</code> 和 <code>git clone</code>。</span>
+      <span class="en">NL2Repo-Bench: Evaluated with the Claude Code harness. To prevent reward hacking, we disable Bash commands that attempt to access the specific repository, such as pip download, pip install, and git clone.</span></li>
+    <li><span class="zh">DeepSWE 1.1：在 Claude Code 执行框架下评测，参数为 <code>temp=1.0</code>、<code>top_p=0.95</code>、256K 上下文窗口。</span>
+      <span class="en">DeepSWE 1.1: Evaluated with the Claude Code harness at temp=1.0, top_p=0.95, and a 256K context window.</span></li>
+    <li><span class="zh">QwenSWEBench：用于评估模型软件工程能力的内部编码基准，使用 Claude Code 执行框架评测。报告结果为 avg@3（三次平均），超时时间 8 小时，<code>max_tokens=32,768</code>，<code>temperature=1.0</code>，256K 上下文窗口。</span>
+      <span class="en">QwenSWEBench: In-house coding benchmark for evaluating models' software engineering capabilities. Evaluated with the Claude Code harness. Reporting avg@3 with an 8-hour timeout, max_tokens=32,768, temperature=1.0, and a 256K context window.</span></li>
+    <li><span class="zh">CoWorkBench：内部自建的协同办公基准，用于评估计算机科学、金融、法律、医疗及其他生产力领域中的长程任务。</span>
+      <span class="en">CoWorkBench: In-house cowork benchmark for evaluating long-horizon tasks across computer science, finance, law, medical, and other productivity domains.</span></li>
+    <li><span class="zh">HLE：由 GPT-4o 担任评判。</span>
+      <span class="en">HLE: Judged by GPT-4o.</span></li>
+    <li><span class="zh">每行最优结果以加粗显示。</span>
+      <span class="en">The best result in each row is shown in bold.</span></li>
+    <li><span class="zh">空单元格（<code>--</code>）表示结果暂未提供或不适用。</span>
+      <span class="en">Empty cells (--) indicate that results are not yet available or not applicable.</span></li>
+  </ol>
+</section>
+
+<!-- ============ §6 VL BENCH ============ -->
+<section id="bench-vl">
+  <h2><span class="num">§6</span>视觉语言（VL）性能<span class="en-title">VL Performance</span></h2>
+
+  <div class="note-box">
+    <span class="zh">译注：原文中 <strong>CI</strong> 未给出全称定义，可能为某种带附加上下文的评测设置（Without CI / With CI）。为保持准确性，此处保留 <code>CI</code> 原文不做臆测翻译，其余部分按字面译出。</span>
+    <span class="en">Translator's note: "CI" is not expanded in the source document; it is preserved verbatim rather than guessed.</span>
+  </div>
+
+  <table>
+    <caption>表 2　多模态基准测试结果（红色加粗为该行最优；<code>--</code> 表示结果暂缺或不适用）</caption>
+    <tr>
+      <th class="cap">能力类别</th><th class="cap">基准测试</th>
+      <th>Qwen3.8-27B</th><th>Qwen3.6-27B</th><th>Qwen3.7-Plus</th><th>Muse Glimmer-30B</th><th>Opus4.6 Max</th>
+    </tr>
+    <tr><td class="cat" rowspan="7">多模态智能体智能<br>Agentic Multimodal Intelligence</td>
+      <td class="cap">计算机操作 — OSWorld-Verified</td><td class="best">84.3</td><td>63.9</td><td>73.3</td><td>65.9</td><td>72.7</td></tr>
+    <tr><td class="cap">浏览器操作 — WebArena-Verified</td><td class="best">64.8</td><td>48.8</td><td>55.3</td><td>--</td><td>--</td></tr>
+    <tr><td class="cap">移动端操作 — AndroidWorld</td><td class="best">81.9</td><td>70.3</td><td>81.0</td><td>--</td><td>62.0</td></tr>
+    <tr><td class="cap">应用复刻 — RecreationBench</td><td class="best">47.1</td><td>29.8</td><td>30.2</td><td>--</td><td>--</td></tr>
+    <tr><td class="cap">多模态工具使用 — ClawEval-MM</td><td><span class="best">Pass@3 57.4</span> / Average 56.9</td><td>Pass@3 42.6 / Average 50.4</td><td><span class="best">Pass@3 57.4</span> / <span class="best">Average 60.1</span></td><td>--</td><td>Pass@3 52.5 / Average 54.7</td></tr>
+    <tr><td class="cap">多模态软件工程 — SWE-MM</td><td class="best">38.6</td><td>25.7</td><td>30.0</td><td>--</td><td>27.1</td></tr>
+    <tr><td class="cap">视觉网页开发 — Vision2Web</td><td class="best">62.9</td><td>45.0</td><td>42.1</td><td>--</td><td>--</td></tr>
+
+    <tr><td class="cat" rowspan="6">通用多模态智能<br>General Multimodal Intelligence</td>
+      <td class="cap">视觉数学解题 — MathVision</td><td>Without CI 90.0 / <span class="best">With CI 94.6</span></td><td>Without CI 85.1</td><td><span class="best">Without CI 90.3</span></td><td>--</td><td>Without CI 65.5</td></tr>
+    <tr><td class="cap">通用视觉推理 — BabyVision</td><td><span class="best">Without CI 65.7</span> / <span class="best">With CI 85.6</span></td><td>Without CI 28.9</td><td>Without CI 64.7 / With CI 70.4</td><td>--</td><td>Without CI 12.6</td></tr>
+    <tr><td class="cap">科学图表分析 — CharXiv (RQ)</td><td>Without CI 83.7 / <span class="best">With CI 90.2</span></td><td>Without CI 78.4</td><td><span class="best">Without CI 85.8</span> / With CI 85.9</td><td>78.8</td><td>Without CI 66.0</td></tr>
+    <tr><td class="cap">文档智能 — OmniDocBench 1.5</td><td>91.1</td><td>89.4</td><td class="best">91.4</td><td>75.8</td><td>86.6</td></tr>
+    <tr><td class="cap">真实场景感知 — RealWorldQA</td><td>85.9</td><td>84.1</td><td class="best">86.9</td><td>--</td><td>73.9</td></tr>
+    <tr><td class="cap">具身智能 — ERQA</td><td>65.5</td><td>62.5</td><td class="best">69.8</td><td>--</td><td>40.8</td></tr>
+  </table>
+
+  <h4>注释<span class="en-title">Notes</span></h4>
+  <ol class="notes">
+    <li><span class="zh">MathVision、BabyVision 与 CharXiv (RQ)：当两种设置都有结果时，单元格分别列出"Without CI"与"With CI"；否则只显示可用设置下的结果。MathVision 与 CharXiv (RQ) 中少量错误的 ground-truth 标注已在人工核查后修正，这些基准上报告的所有分数均基于修正后的标注计算。</span>
+      <span class="en">MathVision, BabyVision, and CharXiv (RQ): Where both settings are available, cells report "Without CI" and "With CI" separately; otherwise, only the available setting is shown. A small number of incorrect ground-truth annotations in MathVision and CharXiv (RQ) were corrected following manual verification, and all reported scores on those benchmarks were computed using the corrected annotations.</span></li>
+    <li><span class="zh">MathVision：Qwen3.8-27B 使用固定提示词评测："Please reason step by step, and put your final answer within <code>\boxed{}</code>."（请逐步推理，并将最终答案放在 <code>\boxed{}</code> 中）。其余模型则报告两种提示词变体中的较高分——一种要求、一种不要求 <code>\boxed{}</code> 格式。</span>
+      <span class="en">MathVision: Qwen3.8-27B is evaluated using the fixed prompt: "Please reason step by step, and put your final answer within \boxed{}." For the remaining models, we report the higher score from two prompt variants—one with and one without the \boxed{} formatting requirement.</span></li>
+    <li><span class="zh">WebArena-Verified：分数使用官方 WebArena-Verified 评分器，在 OSWorld 脚手架下计算。</span>
+      <span class="en">WebArena-Verified: Scores are computed with the official WebArena-Verified grader under the OSWorld scaffold.</span></li>
+    <li><span class="zh">RecreationBench：内部自建的长程应用复刻基准，用于评估跨五个平台的混合智能体能力：桌面端（Ubuntu、macOS、Windows）、移动端（Android）与 Web。</span>
+      <span class="en">RecreationBench: An in-house, long-horizon application-recreation benchmark designed to evaluate hybrid-agent capabilities across five platforms: desktop (Ubuntu, macOS, and Windows), mobile (Android), and the web.</span></li>
+    <li><span class="zh">ClawEval-MM：分数以"Pass@3 / 平均分"形式给出。Pass@3 指三次尝试中至少有一次通过的任务占比；平均分为三次尝试的基准得分均值。</span>
+      <span class="en">ClawEval-MM: Scores are reported as "Pass@3 / average score." Pass@3 is the percentage of tasks passed in at least one of three trials; the average score is the mean benchmark score across the three trials.</span></li>
+    <li><span class="zh">Vision2Web：分数在前端、网页与网站三个类别上取平均。评测使用 Claude Code 执行框架，并由 <code>gpt-5.4-2026-03-05</code> 担任评判。</span>
+      <span class="en">Vision2Web: Scores are averaged across the frontend, webpage, and website categories. Evaluations use the Claude Code harness and are judged by gpt-5.4-2026-03-05.</span></li>
+    <li><span class="zh">SWE-MM：在 Claude Code 执行框架上，基于 SWE-bench Multimodal 的公开 dev 子集评测，并按 Claude Opus 4.7 系统卡附录 8.3 所述做了相应修改。</span>
+      <span class="en">SWE-MM: Scores are evaluated on the Claude Code harness using the public dev split of SWE-bench Multimodal, with the modifications described in Appendix 8.3 of the Claude Opus 4.7 system card.</span></li>
+    <li><span class="zh">空单元格（<code>--</code>）表示结果暂未提供或不适用。</span>
+      <span class="en">Empty cells (--) indicate that results are not yet available or not applicable.</span></li>
+  </ol>
+</section>
+
+<!-- ============ §7 QUICKSTART ============ -->
+<section id="quickstart">
+  <h2><span class="num">§7</span>快速上手<span class="en-title">Quickstart</span></h2>
+
+  <div class="pair">
+    <p class="zh">为简化集成，我们推荐通过 API 使用 Qwen3.8。</p>
+    <p class="en">For streamlined integration, we recommend using Qwen3.8 via APIs.</p>
+  </div>
+
+  <h3>部署 Qwen3.8<span class="en-title">Serving Qwen3.8</span></h3>
+  <blockquote class="pair">
+    <p class="zh">不同框架的推理效率与吞吐差异显著。我们建议使用最新版本的框架，以获得最佳性能与兼容性。对于生产负载或高吞吐场景，推荐使用 SGLang、vLLM 或 TokenSpeed 等专用推理服务引擎。</p>
+    <p class="en">Inference efficiency and throughput vary significantly across frameworks. We recommend using the latest framework versions to ensure optimal performance and compatibility. For production workloads or high-throughput scenarios, dedicated serving engines such as SGLang, vLLM, or TokenSpeed are recommended.</p>
+  </blockquote>
+  <div class="pair">
+    <p class="zh">Qwen3.8 可使用以下主流推理框架部署，例如：</p>
+    <p class="en">Qwen3.8 can be deployed with popular inference frameworks, e.g.:</p>
+  </div>
+  <ul class="bi">
+    <li><p class="zh"><a href="https://www.sglang.io/">SGLang</a>：<a href="https://docs.sglang.io/cookbook/autoregressive/Qwen/Qwen3.8-27B">Qwen3.8 Cookbook</a>（部署手册）</p>
+      <p class="en">SGLang: Qwen3.8 Cookbook</p></li>
+    <li><p class="zh"><a href="https://vllm.ai/">vLLM</a>：<a href="https://recipes.vllm.ai/Qwen/Qwen3.8-27B">Qwen3.8 Recipe</a>（部署配方）</p>
+      <p class="en">vLLM: Qwen3.8 Recipe</p></li>
+    <li><p class="zh"><a href="https://lightseek.org/tokenspeed/">TokenSpeed</a>：<a href="https://lightseek.org/tokenspeed/recipes/models#qwen3-8">Qwen3.8 Recipe</a>（部署配方）</p>
+      <p class="en">TokenSpeed: Qwen3.8 Recipe</p></li>
+  </ul>
+
+  <h3>API 使用<span class="en-title">API Usage</span></h3>
+  <blockquote class="pair">
+    <p class="zh">Qwen3.8 模型默认在思考模式下运行，会在生成最终回复之前先输出以 <code>&lt;think&gt;\n...&lt;think&gt;\n\n</code> 标识的思考内容。若要关闭思考内容、直接获得回复，请参阅<a href="#instruct">此处</a>的示例。</p>
+    <p class="en">Qwen3.8 models operate in thinking mode by default, generating thinking content signified by <code>&lt;think&gt;\n...&lt;think&gt;\n\n</code> before producing the final response. To disable thinking content and obtain a direct response, refer to the examples here.</p>
+  </blockquote>
+
+  <blockquote class="pair">
+    <p class="zh">我们推荐使用以下采样参数组合进行生成：</p>
+    <p class="en">We recommend using the following sets of sampling parameters for generation:</p>
+  </blockquote>
+  <table class="glossary">
+    <tr><th style="width:30%">模式</th><th style="width:20%">Mode</th><th>推荐采样参数</th></tr>
+    <tr><td>思考模式</td><td>Thinking Mode</td><td><code>temperature=1.0</code>, <code>top_p=0.95</code>, <code>top_k=20</code>, <code>min_p=0.0</code>, <code>presence_penalty=0.0</code>, <code>repetition_penalty=1.0</code></td></tr>
+    <tr><td>指令（或非思考）模式</td><td>Instruct (or non-thinking) mode</td><td><code>temperature=0.7</code>, <code>top_p=0.80</code>, <code>top_k=20</code>, <code>min_p=0.0</code>, <code>presence_penalty=1.5</code>, <code>repetition_penalty=1.0</code></td></tr>
+  </table>
+  <div class="pair">
+    <p class="zh">请注意，各推理框架对采样参数的支持情况有所不同。</p>
+    <p class="en">Please note that the support for sampling parameters varies according to inference frameworks.</p>
+  </div>
+
+  <div class="pair">
+    <p class="zh">Qwen3.8 官方支持 <code>reasoning_effort</code> 参数，可用于调节推理深度并控制成本：</p>
+    <p class="en">Qwen3.8 comes with official support for <code>reasoning_effort</code>, which can be used to adjust reasoning depth and control cost:</p>
+  </div>
+  <ul class="bi">
+    <li><p class="zh"><code>xhigh</code>（默认值）：适用于需要深入分析的高复杂度任务。</p><p class="en"><code>xhigh</code> (default): for complex tasks demanding thorough analysis</p></li>
+    <li><p class="zh"><code>medium</code>：在准确率与速度之间取得平衡。</p><p class="en"><code>medium</code>: balancing accuracy and speed</p></li>
+    <li><p class="zh"><code>low</code>：高效推理，针对速度与成本优化。</p><p class="en"><code>low</code>: efficient reasoning optimizing for speed and cost</p></li>
+  </ul>
+  <div class="pair">
+    <p class="zh">此外，为了开箱即用的最佳体验，所有负载默认启用 <code>preserve_thinking</code>。若要关闭保留思考，请参阅<a href="#disable">此处</a>的示例。</p>
+    <p class="en">In addition, <code>preserve_thinking</code> is enabled by default for all workloads for the best out-of-the-box experience. To disable preserved thinking, refer to the examples here.</p>
+  </div>
+
+  <blockquote class="pair">
+    <p class="zh">在多轮智能体任务中，降低推理强度并不总能缩短整体任务完成时间。虽然每轮响应可能更快，但也可能导致分析不充分、失败增多与反复重试，反而增加总延迟与 token 消耗。</p>
+    <p class="en">In multi-turn agentic tasks, lower reasoning effort does not always reduce overall task completion time. Although it may produce faster per-turn responses, it can also lead to insufficient analysis, more failures, and repeated retries, which may increase total latency and token consumption.</p>
+  </blockquote>
+
+  <h4>Chat Completions API</h4>
+  <div class="pair">
+    <p class="zh">Chat Completions API 可用于大多数推理框架，也可用于 <a href="https://www.qwencloud.com/">Qwen Cloud</a>。开始之前，请确保已安装 OpenAI Python SDK 并配置好 API Key 与 API Base URL，例如：</p>
+    <p class="en">The Chat Completions API can be used with most inference frameworks, as well as Qwen Cloud. Before starting, make sure the OpenAI Python SDK is installed and the API key and the API base URL are configured, e.g.:</p>
+  </div>
+<pre><code>pip install -U openai
+
+# 请按实际情况设置以下两项
+export OPENAI_BASE_URL='your-base-url'
+export OPENAI_API_KEY='your-api-key'</code></pre>
+
+  <h4>纯文本输入<span class="en-title">Text-Only Input</span></h4>
+  <p class="code-cap">译注：代码保持原样，仅对关键参数加了中文行内注释说明（下方"参数要点"）。</p>
+<pre><code>from openai import OpenAI
+# 由环境变量配置
+client = OpenAI()
+
+messages = [{"role": "user", "content": "Write a Python function to merge two sorted linked lists."}]
+
+completion = client.chat.completions.create(
+    model="Qwen/Qwen3.8-27B",
+    messages=messages,
+    extra_body={
+        "chat_template_kwargs": {
+            "enable_thinking": True,   # 默认开启
+            "preserve_thinking": True, # 默认开启
+        },
+    },
+    reasoning_effort="xhigh",  # 默认为 xhigh；支持的档位为 xhigh、medium、low
+    stream=True,
+    stream_options={"include_usage": True},
+)
+
+reasoning_content = ""
+answer_content = ""
+is_answering = False
+print("\n" + "=" * 20 + "Reasoning" + "=" * 20 + "\n")
+
+for chunk in completion:
+    if not chunk.choices:
+        print("\nUsage:")
+        print(chunk.usage)
+        continue
+
+    delta = chunk.choices[0].delta
+
+    if hasattr(delta, "reasoning_content") and delta.reasoning_content is not None:
+        if not is_answering:
+            print(delta.reasoning_content, end="", flush=True)
+        reasoning_content += delta.reasoning_content
+    elif hasattr(delta, "reasoning") and delta.reasoning is not None:
+        if not is_answering:
+            print(delta.reasoning, end="", flush=True)
+        reasoning_content += delta.reasoning
+
+    if hasattr(delta, "content") and delta.content:
+        if not is_answering:
+            print("\n" + "=" * 20 + "Answer" + "=" * 20 + "\n")
+            is_answering = True
+        print(delta.content, end="", flush=True)
+        answer_content += delta.content
+
+messages.append({
+    "role": "assistant",
+    "content": answer_content,
+    "reasoning_content": reasoning_content,
+    "reasoning": reasoning_content,
+})</code></pre>
+  <div class="pair">
+    <p class="zh">参数要点：<code>enable_thinking</code> 与 <code>preserve_thinking</code> 通过 <code>chat_template_kwargs</code> 传入，默认均为 <code>True</code>；<code>reasoning_effort</code> 作为顶层参数传入，默认 <code>xhigh</code>；流式响应中推理内容与正式回答分别位于 <code>delta.reasoning_content</code>（或 <code>delta.reasoning</code>）与 <code>delta.content</code>；当 <code>chunk.choices</code> 为空时，该 chunk 携带的是 <code>usage</code> 用量信息。</p>
+    <p class="en">Key parameters: enable_thinking and preserve_thinking are passed via chat_template_kwargs (both default True); reasoning_effort is a top-level parameter (default xhigh); in streaming, reasoning vs. answer arrive in delta.reasoning_content (or delta.reasoning) and delta.content; an empty chunk.choices carries usage.</p>
+  </div>
+
+  <h4>图像输入<span class="en-title">Image Input</span></h4>
+<pre><code>from openai import OpenAI
+# 由环境变量配置
+client = OpenAI()
+
+messages = [
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://qianwen-res.oss-accelerate.aliyuncs.com/Qwen3.5/demo/CI_Demo/mathv-1327.jpg"
+                }
+            },
+            {
+                "type": "text",
+                "text": "The centres of the four illustrated circles are in the corners of the square. The two big circles touch each other and also the two little circles. With which factor do you have to multiply the radii of the little circles to obtain the radius of the big circles?\nChoices:\n(A) $\\frac{2}{9}$\n(B) $\\sqrt{5}$\n(C) $0.8 \\cdot \\pi$\n(D) 2.5\n(E) $1+\\sqrt{2}$"
+            }
+        ]
+    }
+]
+
+chat_response = client.chat.completions.create(
+    model="Qwen/Qwen3.8-27B",
+    messages=messages,
+)
+print("Chat response:", chat_response)</code></pre>
+  <div class="pair">
+    <p class="zh">示例题意（译注）：图示四个圆的圆心位于正方形四个角上，两个大圆彼此相切并同时与两个小圆相切。小圆半径需乘以哪个系数才能得到大圆半径？选项：(A) 2/9　(B) √5　(C) 0.8·π　(D) 2.5　(E) 1+√2。</p>
+    <p class="en">The prompt asks: the centres of the four circles are at the square's corners; the two big circles touch each other and the two little circles. What factor multiplies the small radii to get the big radius?</p>
+  </div>
+
+  <h4>视频输入<span class="en-title">Video Input</span></h4>
+<pre><code>from openai import OpenAI
+# 由环境变量配置
+client = OpenAI()
+
+messages = [
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "video_url",
+                "video_url": {
+                    "url": "https://qianwen-res.oss-accelerate.aliyuncs.com/Qwen3.5/demo/video/N1cdUjctpG8.mp4"
+                }
+            },
+            {
+                "type": "text",
+                "text": "How many porcelain jars were discovered in the niches located in the primary chamber of the tomb?"
+            }
+        ]
+    }
+]
+
+chat_response = client.chat.completions.create(
+    model="Qwen/Qwen3.8-27B",
+    messages=messages,
+)
+
+# 当 vLLM 以 --media-io-kwargs '{"video": {"num_frames": -1}}' 启动时，
+# 可通过 extra_body 配置视频抽帧（例如设置 fps）。
+# 该特性目前仅在 vLLM 中支持。
+#
+# 默认情况下 fps=2 且 do_sample_frames=True。
+# 当 do_sample_frames=True 时，可自定义 fps 以设定所需的视频采样率。
+# chat_response = client.chat.completions.create(
+#     model="Qwen/Qwen3.8-27B",
+#     messages=messages,
+#     extra_body={
+#         "mm_processor_kwargs": {"fps": 2, "do_sample_frames": True},
+#     },
+# )
+
+print("Chat response:", chat_response)</code></pre>
+  <div class="pair">
+    <p class="zh">示例题意（译注）：在这座墓葬主室的壁龛中共发现了多少件瓷罐？</p>
+    <p class="en">How many porcelain jars were discovered in the niches located in the primary chamber of the tomb?</p>
+  </div>
+
+  <h4 id="instruct">指令（或非思考）模式<span class="en-title">Instruct (or Non-Thinking) Mode</span></h4>
+  <div class="pair">
+    <p class="zh">Qwen3.8-27B 默认会在回答前先思考。你可以通过配置 API 参数，让模型不经过思考直接给出回复。例如：</p>
+    <p class="en">Qwen3.8-27B will think by default before responding. You can obtain a direct response from the model without thinking by configuring the API parameters. For example,</p>
+  </div>
+<pre><code>from openai import OpenAI
+# 由环境变量配置
+client = OpenAI()
+
+messages = [
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://qianwen-res.oss-accelerate.aliyuncs.com/Qwen3.5/demo/RealWorld/RealWorld-04.png"
+                }
+            },
+            {
+                "type": "text",
+                "text": "Where is this?"
+            }
+        ]
+    }
+]
+
+chat_response = client.chat.completions.create(
+    model="Qwen/Qwen3.8-27B",
+    messages=messages,
+    temperature=0.7,
+    top_p=0.8,
+    presence_penalty=1.5,
+    extra_body={
+        "top_k": 20,
+        "chat_template_kwargs": {"enable_thinking": False},
+    },
+)
+print("Chat response:", chat_response)</code></pre>
+  <blockquote class="pair">
+    <p class="zh">如果你使用的是 Qwen Cloud 提供的 API，除了修改 <code>model</code> 之外，请直接使用 <code>"enable_thinking": False</code>，而不要写成 <code>"chat_template_kwargs": {"enable_thinking": False}</code>。</p>
+    <p class="en">If you are using APIs from Qwen Cloud, in addition to changing model, please use "enable_thinking": False instead of "chat_template_kwargs": {"enable_thinking": False}.</p>
+  </blockquote>
+
+  <h4 id="disable">关闭保留思考<span class="en-title">Disable Preserved Thinking</span></h4>
+  <div class="pair">
+    <p class="zh">默认情况下，Qwen3.8 会保留所有历史消息中的思考块，从而在整个对话中维持完整的推理轨迹。这一行为被称为"保留思考"，它确保上下文完全连贯，对于决策一致性、减少冗余推理至关重要的智能体场景尤其有益。同时它还能提升 KV 缓存利用率，在思考与非思考两种模式下都优化了推理效率。</p>
+    <p class="en">By default, Qwen3.8 retains thinking blocks from all historical messages, maintaining a complete reasoning trace across the conversation. This behavior, known as preserved thinking, ensures full context continuity and is especially beneficial for agent scenarios where decision consistency and reduced redundant reasoning are critical. It also improves KV cache utilization, optimizing inference efficiency in both thinking and non-thinking modes.</p>
+  </div>
+  <div class="pair">
+    <p class="zh">如果你只想保留最新一条用户消息所对应的思考块，可将 <code>preserve_thinking</code> 设为 <code>False</code> 来关闭该行为：</p>
+    <p class="en">If you prefer to retain only the thinking blocks from the latest user message, you can disable this behavior by setting preserve_thinking to False:</p>
+  </div>
+<pre><code>from openai import OpenAI
+
+# 由环境变量配置
+client = OpenAI()
+messages = [...]
+chat_response = client.chat.completions.create(
+    model="Qwen/Qwen3.8-27B",
+    messages=messages,
+    extra_body={
+        "chat_template_kwargs": {"preserve_thinking": False},
+    },
+)
+print("Chat response:", chat_response)</code></pre>
+  <blockquote class="pair">
+    <p class="zh">如果你使用的是 Qwen Cloud 提供的 API，除了修改 <code>model</code> 之外，请直接使用 <code>"preserve_thinking": False</code>，无需再包裹在 <code>chat_template_kwargs</code> 中。</p>
+    <p class="en">If you are using APIs from Qwen Cloud, in addition to changing model, please use "preserve_thinking": False directly instead of wrapping it in chat_template_kwargs.</p>
+  </blockquote>
+</section>
+
+<!-- ============ §8 BEST PRACTICES ============ -->
+<section id="best">
+  <h2><span class="num">§8</span>最佳实践<span class="en-title">Best Practices</span></h2>
+  <div class="pair">
+    <p class="zh">为获得最佳性能，我们推荐以下设置：</p>
+    <p class="en">To achieve optimal performance, we recommend the following settings:</p>
+  </div>
+
+  <h4>1. 采样参数<span class="en-title">Sampling Parameters</span></h4>
+  <div class="pair">
+    <p class="zh">我们建议使用以下采样参数组合：</p>
+    <p class="en">We suggest using the following sets of sampling parameters:</p>
+  </div>
+  <table class="glossary">
+    <tr><th style="width:28%">模式</th><th style="width:22%">Mode</th><th>参数</th></tr>
+    <tr><td>思考模式</td><td>Thinking Mode</td><td><code>temperature=1.0</code>, <code>top_p=0.95</code>, <code>top_k=20</code>, <code>min_p=0.0</code>, <code>presence_penalty=0.0</code>, <code>repetition_penalty=1.0</code></td></tr>
+    <tr><td>指令（或非思考）模式</td><td>Instruct (or non-thinking) mode</td><td><code>temperature=0.7</code>, <code>top_p=0.80</code>, <code>top_k=20</code>, <code>min_p=0.0</code>, <code>presence_penalty=1.5</code>, <code>repetition_penalty=1.0</code></td></tr>
+  </table>
+  <div class="pair">
+    <p class="zh">对于支持该参数的框架，你可以在 0 到 2 之间调节 <code>presence_penalty</code>，以减少无休止的重复。但使用较高的值偶尔会导致语言混杂，并使模型性能略有下降。</p>
+    <p class="en">For supported frameworks, you can adjust the presence_penalty parameter between 0 and 2 to reduce endless repetition. However, using a higher value may occasionally result in language mixing and a slight decrease in model performance.</p>
+  </div>
+
+  <h4>2. 充足的输出长度<span class="en-title">Adequate Output Length</span></h4>
+  <div class="pair">
+    <p class="zh">为了在智能体任务上获得最佳表现，我们建议分配足够的输出长度，让模型生成详尽、完整的回复。对于支持对内部推理与最终输出分别设置 token 上限的框架，我们建议在 1M 上下文长度内采用如下配置：</p>
+    <p class="en">To optimize performance on agentic tasks, we recommend allocating sufficient output length to allow the model to generate detailed and comprehensive responses. For frameworks that support separate token limits for internal reasoning and final outputs, we suggest the following configuration within the 1M context length:</p>
+  </div>
+  <ul class="bi">
+    <li><p class="zh"><strong>推理内容</strong>：将最大输出长度设为 262,144 token。</p><p class="en"><strong>Reasoning Content</strong>: Set the maximum output length to 262,144 tokens.</p></li>
+    <li><p class="zh"><strong>最终回复</strong>：将最大输出长度设为 131,072 token。</p><p class="en"><strong>Final Response</strong>: Set the maximum output length to 131,072 tokens.</p></li>
+  </ul>
+  <div class="pair">
+    <p class="zh">这些设置为复杂推理提供了必要的容量，同时为高质量最终产出留出了充裕空间。</p>
+    <p class="en">These settings provide the necessary capacity for complex reasoning while ensuring ample space for high-quality final deliverables.</p>
+  </div>
+
+  <h4>3. 处理超长文本<span class="en-title">Processing Ultra-Long Texts</span></h4>
+  <div class="pair">
+    <p class="zh">Qwen3.8-27B 原生支持最长 262,144 token 的上下文。对于总长度（含输入与输出）超过该上限的长程任务，我们建议使用 RoPE 缩放技术来有效处理长文本，例如 YaRN。</p>
+    <p class="en">Qwen3.8-27B natively supports context lengths of up to 262,144 tokens. For long-horizon tasks where the total length (including both input and output) exceeds this limit, we recommend using RoPE scaling techniques to handle long texts effectively, e.g., YaRN.</p>
+  </div>
+  <div class="pair">
+    <p class="zh">目前多个推理框架已支持 YaRN，例如 vLLM、SGLang 与 TokenSpeed。一般而言，在支持 YaRN 的框架中有两种启用方式：</p>
+    <p class="en">YaRN is currently supported by several inference frameworks, e.g., vLLM, SGLang, and TokenSpeed. In general, there are two approaches to enabling YaRN for supported frameworks:</p>
+  </div>
+  <div class="pair">
+    <p class="zh"><strong>方式一：修改模型配置文件。</strong> 在 <code>config.json</code> 中，将 <code>text_config</code> 里的 <code>rope_parameters</code> 字段改为：</p>
+    <p class="en"><strong>Modifying the model configuration file:</strong> In the config.json file, change the rope_parameters fields in text_config to:</p>
+  </div>
+<pre><code>{
+    "mrope_interleaved": true,
+    "mrope_section": [
+        11,
+        11,
+        10
+    ],
+    "rope_type": "yarn",
+    "rope_theta": 10000000,
+    "partial_rotary_factor": 0.25,
+    "factor": 4.0,
+    "original_max_position_embeddings": 262144,
+}</code></pre>
+  <div class="pair">
+    <p class="zh"><strong>方式二：通过命令行参数传入。</strong></p>
+    <p class="en"><strong>Passing command line arguments:</strong></p>
+  </div>
+  <p class="code-cap">vLLM：</p>
+<pre><code>VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve ... --hf-overrides '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}' --max-model-len 1000000</code></pre>
+  <p class="code-cap">SGLang：</p>
+<pre><code>SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1 python -m sglang.launch_server ... --json-model-override-args '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}' --context-length 1000000</code></pre>
+  <p class="code-cap">TokenSpeed：</p>
+<pre><code>TOKENSPEED_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1 tokenspeed serve ... --hf-overrides '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}' --max-model-len 1000000</code></pre>
+  <blockquote class="pair">
+    <p class="zh">所有主流开源框架实现的都是静态 YaRN，这意味着无论输入长度如何，缩放因子都保持恒定，<strong>这可能会影响短文本上的性能</strong>。我们建议仅在确实需要处理长上下文时才修改 <code>rope_parameters</code> 配置，同时也建议按需调整 <code>factor</code>。例如，若你的应用典型上下文长度为 524,288 token，那么将 <code>factor</code> 设为 2.0 会更合适。</p>
+    <p class="en">All the notable open-source frameworks implement static YaRN, which means the scaling factor remains constant regardless of input length, <strong>potentially impacting performance on shorter texts.</strong> We advise modifying the rope_parameters configuration only when processing long contexts is required. It is also recommended to modify the factor as needed. For example, if the typical context length for your application is 524,288 tokens, it would be better to set factor as 2.0.</p>
+  </blockquote>
+
+  <h4>4. 长视频理解<span class="en-title">Long Video Understanding</span></h4>
+  <div class="pair">
+    <p class="zh">为了在纯文本与图像场景下优化推理效率，已发布的 <code>video_preprocessor_config.json</code> 中的 <code>size</code> 参数采用了较为保守的配置。建议将 video_preprocessor_config 文件中的 <code>longest_edge</code> 参数设为 469,762,048（对应 224k 视频 token），以便对小时级长视频启用更高帧率的采样，从而获得更优表现。例如：</p>
+    <p class="en">To optimize inference efficiency for plain text and images, the size parameter in the released video_preprocessor_config.json is conservatively configured. It is recommended to set the longest_edge parameter in the video_preprocessor_config file to 469,762,048 (corresponding to 224k video tokens) to enable higher frame-rate sampling for hour-scale videos and thereby achieve superior performance. For example,</p>
+  </div>
+<pre><code>{"longest_edge": 469762048, "shortest_edge": 4096}</code></pre>
+  <div class="pair">
+    <p class="zh">也可以通过引擎启动参数覆盖默认值。具体实现方式请参阅：<a href="https://github.com/vllm-project/vllm/pull/34330">vLLM</a> / <a href="https://github.com/sgl-project/sglang/pull/18467">SGLang</a>。</p>
+    <p class="en">Alternatively, override the default values via engine startup parameters. For implementation details, refer to: vLLM / SGLang.</p>
+  </div>
+</section>
+
+<!-- ============ §9 CITATION ============ -->
+<section id="citation">
+  <h2><span class="num">§9</span>引用<span class="en-title">Citation</span></h2>
+  <div class="pair">
+    <p class="zh">如果你觉得我们的工作有帮助，欢迎引用我们。</p>
+    <p class="en">If you find our work helpful, feel free to give us a cite.</p>
+  </div>
+<pre><code>@misc{qwen38,
+    title = {{Qwen3.8-Max}: A New Bar for Coding and Cowork},
+    url = {https://qwen.ai/blog?id=qwen3.8},
+    author = {{Qwen Team}},
+    month = {August},
+    year = {2026}
+}</code></pre>
+  <div class="pair">
+    <p class="zh">标题译法参考：《Qwen3.8-Max：树立编码与协同办公的新标杆》。注：BibTeX 条目中的标题、URL 与作者字段按引用规范保留英文原文，不做翻译。</p>
+    <p class="en">Title reference translation: "Qwen3.8-Max: A New Bar for Coding and Cowork". Note: BibTeX fields are kept in English per citation convention.</p>
+  </div>
+</section>
+
+<footer>
+  翻译说明：本文档为逐段中英对照，中文以通顺技术表达为目标，专有名词、benchmark 名称、参数名、框架名与代码片段一律保留原文；术语统一依据 §1 对照表。原文中 <code>CI</code> 未在模型卡中展开定义，故保留不译，已在 §6 标注。
+</footer>
+
+</div>
+
+<script>
+  var bEn = document.getElementById('btnEn');
+  var bZh = document.getElementById('btnZh');
+  bEn.addEventListener('click', function(){
+    document.body.classList.toggle('hide-en');
+    bEn.classList.toggle('on');
+    bEn.textContent = document.body.classList.contains('hide-en') ? '显示英文' : '隐藏英文';
+  });
+  bZh.addEventListener('click', function(){
+    document.body.classList.toggle('hide-zh');
+    bZh.classList.toggle('on');
+    bZh.textContent = document.body.classList.contains('hide-zh') ? '显示中文' : '隐藏中文';
+  });
+</script>
+</body>
+</html>
