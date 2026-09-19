@@ -1,0 +1,67 @@
+>>> [并行任务1] 开始拉取与编译 llama.cpp ...
+Cloning into '/root/llama.cpp'...
+-- The C compiler identification is GNU 11.4.0
+-- The CXX compiler identification is GNU 11.4.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- llama.cpp version: 0.4.1-dev
+CMAKE_BUILD_TYPE=Release
+-- Found Git: /usr/bin/git (found version "2.34.1") 
+-- The ASM compiler identification is GNU
+-- Found assembler: /usr/bin/cc
+-- Looking for pthread.h
+-- Looking for pthread.h - found
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE  
+-- Warning: ccache not found - consider installing it for faster compilation or disable this warning with GGML_CCACHE=OFF
+-- CMAKE_SYSTEM_PROCESSOR: x86_64
+-- GGML_SYSTEM_ARCH: x86
+-- Found OpenMP_C: -fopenmp (found version "4.5") 
+-- Found OpenMP_CXX: -fopenmp (found version "4.5") 
+-- Found OpenMP: TRUE (found version "4.5")  
+-- Including CPU backend
+-- x86 detected
+-- Adding CPU backend variant ggml-cpu: -march=native 
+-- Found CUDAToolkit: /usr/local/cuda/include (found version "13.2.51") 
+-- CUDA Toolkit found
+CMake Error at /usr/share/cmake-3.22/Modules/CMakeDetermineCompilerId.cmake:726 (message):
+  Compiling the CUDA compiler identification source file
+  "CMakeCUDACompilerId.cu" failed.
+
+  Compiler: /usr/local/cuda/bin/nvcc
+
+  Build flags:
+
+  Id flags: --keep;--keep-dir;tmp;-gencode=arch=compute_70,code=sm_70 -v
+
+  
+
+  The output was:
+
+  1
+
+  nvcc fatal : Unsupported gpu architecture 'compute_70'
+
+  
+
+  
+
+Call Stack (most recent call first):
+  /usr/share/cmake-3.22/Modules/CMakeDetermineCompilerId.cmake:6 (CMAKE_DETERMINE_COMPILER_ID_BUILD)
+  /usr/share/cmake-3.22/Modules/CMakeDetermineCompilerId.cmake:48 (__determine_compiler_id_test)
+  /usr/share/cmake-3.22/Modules/CMakeDetermineCUDACompiler.cmake:298 (CMAKE_DETERMINE_COMPILER_ID)
+  ggml/src/ggml-cuda/CMakeLists.txt:59 (enable_language)
+
+
+-- Configuring incomplete, errors occurred!
+See also "/root/llama.cpp/build/CMakeFiles/CMakeOutput.log".
+See also "/root/llama.cpp/build/CMakeFiles/CMakeError.log".

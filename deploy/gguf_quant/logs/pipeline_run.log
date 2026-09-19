@@ -1,0 +1,19 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/root/quant_framework/quant_cli.py", line 160, in <module>
+    main()
+  File "/root/quant_framework/quant_cli.py", line 153, in main
+    results = pipeline.run_all()
+              ^^^^^^^^^^^^^^^^^^
+  File "/root/quant_framework/quant_pipeline.py", line 81, in run_all
+    results = self.run_quantization(base_gguf, imatrix_path=imx, is_ud_mode=is_ud)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/quant_framework/quant_pipeline.py", line 65, in run_quantization
+    quants = self.quantizer.quantize_all(base_gguf_path, imatrix_path, is_ud_mode=is_ud_mode)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/quant_framework/gguf_quantizer.py", line 79, in quantize_all
+    run_command(cmd, log_path=os.path.join(self.dir_logs, f"quant_{q_type.value}.log"))
+  File "/root/quant_framework/quant_utils.py", line 57, in run_command
+    raise RuntimeError(
+RuntimeError: 命令执行失败，退出码 1，详情查看: /root/Qwen3.8-27B-quant/logs/quant_Q4_K_M.log

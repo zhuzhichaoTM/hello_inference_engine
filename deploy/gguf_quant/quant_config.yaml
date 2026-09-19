@@ -1,0 +1,30 @@
+model_input_path: "/model/ModelScope/Qwen/Qwen3.8-27B"
+output_dir: "/root/Qwen3.8-27B-quant"
+model_name: "Qwen3.8-27B"
+llama_cpp_bin_dir: "/root/llama.cpp/build/bin"
+llama_cpp_src_dir: "/root/llama.cpp"
+
+target_quants:
+  - "Q4_K_M"
+  - "Q5_K_M"
+  - "Q8_0"
+
+imatrix_mode: "self_gen"
+imatrix_chunks: 100
+imatrix_chunk_size: 512
+imatrix_gpu_layers: 99
+num_threads: 10
+
+enable_layered_overrides: true
+tensor_overrides:
+  "blk.0.*": "Q6_K"
+  "blk.1.*": "Q6_K"
+  "blk.62.*": "Q6_K"
+  "blk.63.*": "Q6_K"
+  "blk.64.nextn.*": "Q8_0"
+  ".*attn_q.*": "Q5_K_M"
+  ".*attn_k.*": "Q5_K_M"
+  ".*ffn_gate.*": "Q5_K_M"
+  ".*ffn_up.*": "Q5_K_M"
+
+clean_intermediate_base: false

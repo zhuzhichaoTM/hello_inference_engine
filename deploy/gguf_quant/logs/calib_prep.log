@@ -1,0 +1,8 @@
+>>> [并行任务2] 开始准备多源校准数据集 ...
+>>> [并行任务2] 校准数据准备完成！
+total 22M
+-rw-r--r-- 1 root root  22M Sep 19 03:48 alpaca.json
+-rw-r--r-- 1 root root 160K Sep 19 03:48 alpaca.txt
+-rw-r--r-- 1 root root  458 Sep 19 03:48 custom.txt
+-rw-r--r-- 1 root root  74K Sep 19 03:48 final.txt
+-rw-r--r-- 1 root root    0 Sep 19 03:47 wikitext.txt

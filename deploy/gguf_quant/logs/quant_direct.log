@@ -1,0 +1,8 @@
+>>> 开始执行 UD 动态量化: Qwen3.8-27B-UD-Q4_K_M.gguf ...
+>>> Qwen3.8-27B-UD-Q4_K_M.gguf 生成完毕！
+>>> 开始执行基础 imatrix 量化: Qwen3.8-27B-Q4_K_M-imatrix.gguf ...
+>>> 全量量化完毕！
+total 34G
+-rw-r--r-- 1 root root 16G Sep 19 06:19 Qwen3.8-27B-Q4_K_M-imatrix.gguf
+-rw-r--r-- 1 root root 18G Sep 19 06:05 Qwen3.8-27B-UD-Q4_K_M.gguf
+-rw-r--r-- 1 root root 14M Sep 19 04:22 imatrix-UD-Qwen3.8-27B.gguf
