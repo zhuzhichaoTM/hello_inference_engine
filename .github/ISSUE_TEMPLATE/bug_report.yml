@@ -1,0 +1,28 @@
+name: "🐛 Bug / Content Fix"
+description: 报告文档错误、链接失效或实测不可复现
+title: "[fix]: "
+labels: ["bug"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: 出问题的文件/章节
+      placeholder: "例如 deploy/Qwen3.8-27B/Qwen3.8-27B部署方案与实战报告.md §3.2"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 问题描述
+      description: 期望是什么？实际是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: 复现环境（如适用）
+      placeholder: "GPU型号 / 驱动 / 框架版本 / 模型版本"
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: 修复建议（可选）

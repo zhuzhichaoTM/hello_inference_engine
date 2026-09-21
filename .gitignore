@@ -1,0 +1,49 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Rust / C builds (analysis demos)
+target/
+*.o
+*.so
+
+# Large model artifacts — use GitHub Releases, never commit
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.onnx
+
+# Logs & local run outputs
+*.log
+logs/
+ppl/
+imatrix*.gguf
+
+# Calibration datasets (large text dumps, re-download instead)
+deploy/gguf_quant/calibration/*.json
+deploy/gguf_quant/calibration/*.txt
+
+# LaTeX / Office temporaries
+*.aux
+*.toc
+~$*.docx
+
+# IDE & agent scratch
+.vscode/
+.idea/
+.claude/scheduled_tasks.lock
+*.swp
+*~

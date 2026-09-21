@@ -1,0 +1,32 @@
+name: docs-lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check markdown formatting
+        run: npx --yes prettier --check "**/*.md"
+
+      - name: Block oversized files (>5MB, excluding images dir)
+        run: |
+          oversized=$(find . -path ./.git -prune -o -path ./basics/images -prune -o -type f -size +5M -print)
+          if [ -n "$oversized" ]; then
+            echo "Oversized files detected (use GitHub Releases instead):"
+            echo "$oversized"
+            exit 1
+          fi
+
+      - name: Check for leaked secrets in scripts
+        run: |
+          if grep -rniE "api[_-]?key\s*=\s*['\"][^'\"]+['\"]|sk-[A-Za-z0-9]{8,}" --include="*.sh" --include="*.py" --include="*.yaml" . ; then
+            echo "Possible hardcoded secrets found."
+            exit 1
+          fi

@@ -1,0 +1,44 @@
+name: "📚 Content Proposal"
+description: 提议新增篇章、模型实战或硬件洞察
+title: "[proposal]: "
+labels: ["enhancement"]
+body:
+  - type: input
+    id: topic
+    attributes:
+      label: 主题
+      placeholder: "例如 Qwen3-8B vLLM 部署实战"
+    validations:
+      required: true
+  - type: dropdown
+    id: track
+    attributes:
+      label: 归属篇章
+      options:
+        - basics（基础篇）
+        - paper（学术篇）
+        - analysis（剖析篇）
+        - hw（硬件篇）
+        - deploy（部署篇）
+        - benches（性能篇）
+        - hotspot（热点篇）
+        - extention（扩展篇）
+    validations:
+      required: true
+  - type: textarea
+    id: outline
+    attributes:
+      label: 内容大纲
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: 实测环境（部署/评测类必填）
+      placeholder: "GPU/NPU型号 / 框架版本 / 数据集"
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 确认
+      options:
+        - label: 我愿意提交 PR 实现该内容
