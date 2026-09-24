@@ -1,27 +1,57 @@
-# 剖析篇 · 量化原理与源码级特征分析
+# 剖析篇 · 推理引擎、推理框架与源码级特征分析
 
-> **定位**：从原理到源码的深度剖析。聚焦 GGUF / llama.cpp 量化实现，用代码 + 可视化讲清低比特量化的每一步。
+> **定位**：从原理到源码的深度剖析,聚焦推理优化实现，基于代码、可视化图解，运行报告等讲清大模型推理的每一步。
 
 | [顶层](../README.md) | [文档索引](../docs/index.md) | [路线图](../docs/roadmap.md) | [写作规范](../docs/writing-style.md) |
 
+## 如何使用本导航
+
+本目录按业务地图的 L0–L8 能力分层组织资料：
+
+```text
+L0 数学与深度学习
+  → L1 模型资产与 Tokenizer
+  → L2 Tensor / 算子 / 计算图 / 量化
+  → L3 推理运行时 / KV Cache / 生成
+  → L4 硬件 Kernel 与设备优化
+  → L5 推理服务与调度
+  → L6 分布式与平台工程
+  → L7 RAG / Agent / 多模态业务
+  → L8 评测 / 运维 / 安全 / 商业化
+```
+
+完整的学习目标、能力依赖、实践产出和验收标准请先阅读[大模型推理业务知识地图](大模型推理业务地图.md)。每个层级目录都是对应业务特性的资料承载入口；已有量化资料暂不移动，通过下表按职责映射。
+
 ## 内容
 
-| 主题 | 入口 | 内容 |
-|------|------|------|
-| ggml Q4_K_M 源码详细分析 | [quant/ggml/ggml-quants源码详细分析.md](quant/ggml/ggml-quants源码详细分析.md) | 量化函数逐行解读 |
-| Q4_K_M 量化分析（含 C 参考实现） | [quant/ggml/ggml-quants_q4_k_m_analysis.md](quant/ggml/ggml-quants_q4_k_m_analysis.md)、[ggml-quants_q4_k_m.c](quant/ggml/ggml-quants_q4_k_m.c) | 原理 + 可运行代码对照 |
-| Q4_K_M 可视化动效与数学深挖 | [quant/ggml/q4km_debug/](quant/ggml/q4km_debug/) | HTML 动态演示 + VERIFICATION |
-| llama.cpp 量化工具链分析 | [quant/llama_cpp/](quant/llama_cpp/) | quantize 流程、k-quant 选型指南 |
-| 端侧大模型量化系统设计 | [quant/端侧大模型量化系统设计文档.md](quant/端侧大模型量化系统设计文档.md) | 系统级设计视角 |
+| 层级 | 主题                                 | 入口                                                                                                                                                                  | 内容                                                                        |
+| ---- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| L0   | 数学、深度学习与 Transformer 基础    | [L0/](L0/)                                                                                                                                                            | 线性代数、概率、数值精度、Attention、RoPE、FFN、Prefill/Decode 基础         |
+| L1   | 模型资产、权重、Tokenizer 与模型格式 | [L1/](L1/)                                                                                                                                                            | 模型配置、权重加载、Tokenizer、Chat Template、GGUF/ONNX 等格式              |
+| L2   | Tensor、算子、计算图、精度与量化     | [L2/](L2/) · [ggml 量化源码](quant/ggml/ggml-quants源码详细分析.md) · [Q4_K_M 分析](quant/ggml/ggml-quants_q4_k_m_analysis.md) · [可视化调试](quant/ggml/q4km_debug/) | Tensor 布局、核心算子、图优化、低比特量化、量化误差与一致性验证             |
+| L3   | 推理运行时、内存、KV Cache 与生成    | [L3/](L3/) · [量化执行流程](quant/llama_cpp/llama-quantize-impl-flow.md) · [工具分析](quant/llama_cpp/llama-quantize-tool-analysis.md)                                | 模型加载、图执行、内存规划、KV Cache、Prefill/Decode、采样和流式生成        |
+| L4   | CPU、GPU、NPU、Kernel 与硬件优化     | [L4/](L4/) · [端侧量化系统设计](quant/端侧大模型量化系统设计文档.md)                                                                                                  | 设备执行模型、Kernel、带宽、并行、编译器、后端覆盖和 Profile                |
+| L5   | 推理服务、API、批处理与调度          | [L5/](L5/)                                                                                                                                                            | API、请求生命周期、流式输出、动态/连续批处理、限流、背压和 SLA              |
+| L6   | 分布式推理与平台工程                 | [L6/](L6/)                                                                                                                                                            | 多卡多机并行、通信、模型路由、GPU 调度、弹性、多租户、发布与容灾            |
+| L7   | RAG、Agent、多模态与业务编排         | [L7/](L7/)                                                                                                                                                            | 检索增强生成、工具调用、Agent 状态、多模态输入输出和业务工作流              |
+| L8   | 评测、可观测性、可靠性、安全与成本   | [benches/](../benches/) · [L8/](L8/)                                                                                                                                  | 独立评测章节：质量与性能评测、日志追踪、SLA、故障、安全合规、审计和成本闭环 |
 
-`export/` 为导出物暂存目录（构建产物不进仓）。
+## 推荐学习路线
 
-## 阅读建议
+1. **读懂并运行模型：L0 → L1**。先理解 Token、Transformer、模型配置、Tokenizer、权重和 Greedy Sampling。
+2. **实现推理核心：L2 → L3**。从 Tensor、MatMul、Norm、RoPE、Attention 入手，逐步实现计算图、内存规划、KV Cache 和流式生成。当前仓库可优先阅读 [Q4_K_M 可视化调试](quant/ggml/q4km_debug/)、[ggml 量化源码分析](quant/ggml/ggml-quants源码详细分析.md) 和 [llama.cpp 量化流程](quant/llama_cpp/llama-quantize-impl-flow.md)。
+3. **进行硬件与量化优化：L4**。比较 CPU/GPU/NPU 的 Kernel、布局、精度、带宽和功耗，用 Profile 验证收益。
+4. **构建推理服务：L5**。把本地运行时包装为兼容 API，加入流式输出、连续批处理、限流、取消和压测。
+5. **平台化与分布式：L6**。扩展到多卡、多机、多模型、多租户，沉淀容量、发布、回滚和故障转移方案。
+6. **落地业务并形成运营闭环：L7 → L8**。构建 RAG、Agent 或多模态应用；评测、可观测性、可靠性、安全与成本专题统一进入 [benches/](../benches/)，并用质量、时延、成本、安全和 SLA 指标验收。
 
-1. 先看 `q4km_debug/` 的动效建立直觉，再读源码分析。
-2. 选量化档位时配合 [部署篇](../deploy/) 的 `quant_verification` 实测数据一起看。
-3. 动手验证：`q4km_debug/` 内含 Makefile 与测试，可本地复现。
+## 资料归档约定
+
+- 新资料按**主要负责的业务层级**放入对应 `Lx/` 目录；跨层系统设计选择一个主层归档，并在相关层级 README 中互链。
+- 每层优先沉淀四类材料：**原理说明、源码分析、可复现实践、验证/评测报告**。
+- 目录 README 负责说明边界和学习入口；具体文档负责记录问题、实现、数据和验收结论。
+- 量化资料同时涉及 L2（算子与精度）、L3（运行时与 KV Cache）和 L4（硬件优化）时，以主题主责层为入口，避免复制同一份文档。
 
 ## 状态
 
-✅ 完整。补充新框架剖析请先提 [内容提议](../.github/ISSUE_TEMPLATE/content_proposal.yml)，注明归属 `analysis`。
+✅ 已建立 L0–L8 学习导航和资料承载目录；现有量化与 llama.cpp 分析资料持续补充中。新增框架或业务主题请按归档约定提 [内容提议](../.github/ISSUE_TEMPLATE/content_proposal.yml)。

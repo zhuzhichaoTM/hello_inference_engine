@@ -6,13 +6,23 @@
 
 ## 内容
 
-| 主题 | 入口 | 内容 |
-|------|------|------|
-| Q4_K_M 量化 10 组档位对照 | [../deploy/quant/quant_verification/](../deploy/quant/quant_verification/) | A0 基线 + B1~B9 + Z 交付档，PPL 与 smoke 双维度 |
-| Qwen3.8-27B 部署压测 | [../deploy/Qwen3.8-27B/Qwen3.8-27B部署方案与实战报告.md](../deploy/Qwen3.8-27B/Qwen3.8-27B部署方案与实战报告.md) | Prefill/Decode 基准与在线吞吐 |
-| GGUF 工具链压测日志 | [../deploy/gguf_quant/logs/](../deploy/gguf_quant/logs/) | bench / quant 各阶段原始日志 |
+| 主题                      | 入口                                                                                                             | 内容                                            |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Q4_K_M 量化 10 组档位对照 | [../deploy/quant/quant_verification/](../deploy/quant/quant_verification/)                                       | A0 基线 + B1~B9 + Z 交付档，PPL 与 smoke 双维度 |
+| Qwen3.8-27B 部署压测      | [../deploy/Qwen3.8-27B/Qwen3.8-27B部署方案与实战报告.md](../deploy/Qwen3.8-27B/Qwen3.8-27B部署方案与实战报告.md) | Prefill/Decode 基准与在线吞吐                   |
+| GGUF 工具链压测日志       | [../deploy/gguf_quant/logs/](../deploy/gguf_quant/logs/)                                                         | bench / quant 各阶段原始日志                    |
 
-> 本目录为评测门户：原始数据沉淀在各实战目录，本篇负责收敛为可引用的报告。新增报告落在本目录，原始日志留在实战目录。
+> 本目录为 L8 独立章节和评测门户：统一讲解质量、性能、可观测性、可靠性、安全与成本。原始数据沉淀在各实战目录，本篇负责收敛为可引用的报告。新增 L8 文档和评测报告落在本目录，原始日志留在实战目录。
+
+## L8 章节范围
+
+- **质量与性能评测**：PPL、任务集、TTFT、ITL、吞吐、P50/P95/P99 和跨后端一致性。
+- **可观测性**：请求日志、Trace、Token 统计、Cache 命中、资源利用率和告警。
+- **可靠性**：SLA、超时、故障演练、发布回滚、容量和长稳测试。
+- **安全与合规**：Prompt Injection、敏感数据、工具权限、审计和模型/依赖完整性。
+- **成本运营**：Token 成本、GPU 小时、利用率、缓存收益和扩缩容成本。
+
+本章节对应[大模型推理业务地图](../analysis/大模型推理业务地图.md)的 L8；`analysis/L8/` 保留层级导航入口，具体内容以本目录为准。
 
 ## 评测规范（必读）
 
