@@ -1,0 +1,31 @@
+# Extensions
+
+*.a
+*.bat
+*.bin
+*.d
+*.dll
+*.dot
+*.etag
+*.exe
+*.gcda
+*.gcno
+*.gcov
+*.gguf
+*.gguf.json
+*.lastModified
+*.log
+*.metallib
+*.o
+*.so
+*.swp
+*.tmp
+*.DS_Store
+
+# IDE / OS
+
+/.cache/
+/.idea/
+/.vs/
+/.vscode/
+
