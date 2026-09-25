@@ -47,3 +47,4 @@ deploy/gguf_quant/calibration/*.txt
 .claude/scheduled_tasks.lock
 *.swp
 *~
+.workbuddy/
