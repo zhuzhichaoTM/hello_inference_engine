@@ -6,20 +6,20 @@
 
 ## 内容
 
-| 主题 | 入口 | 内容 |
-|------|------|------|
-| 行业动态追踪（待建） | — | 关键技术论坛、X / YouTube 等社媒信息，每期一档 |
-| 硬件产业洞察（已沉淀） | [../hw/ai_hardware_industry_insights_2026.md](../hw/ai_hardware_industry_insights_2026.md) | 2026 算力格局可直接引用 |
-| 产品矩阵（已沉淀） | [../hw/ai_hardware_product_matrix_2026.md](../hw/ai_hardware_product_matrix_2026.md) | 横向对比可直接引用 |
+| 文件名 | 入口 | 内容简介 |
+|---|---|---|
+| `llm-inference-hotspots-2026-09-25.md` | [2026-09 月度档案](2026-09/llm-inference-hotspots-2026-09-25.md) | 2026-09-24 大模型推理优化每日热点，涵盖 vLLM、SGLang、TensorRT-LLM、Hugging Face Optimum、KV Cache、投机解码、量化、异构硬件及可追溯来源。 |
+| 硬件产业洞察（已沉淀） | [硬件洞察](../hw/ai_hardware_industry_insights_2026.md) | 2026 算力格局可直接引用。 |
+| 产品矩阵（已沉淀） | [产品矩阵](../hw/ai_hardware_product_matrix_2026.md) | 横向对比可直接引用。 |
 
 > 追踪渠道：关键技术论坛、X（Twitter）、YouTube 等。每期注明日期与来源链接，观点与事实分离。
 
 ## 收录规范
 
 1. 每条热点必须附来源链接与日期，禁止无源转述。
-2. 季度性内容（如算力洞察）沉淀满一期后归档到对应篇章（硬件→`hw/`，方法→`paper/`），本目录保留索引。
+2. 按月份归档热点档案，例如 `YYYY-MM/`；本目录保留索引。
 3. 观点必须标注为观点，数据必须标注出处与年份。
 
 ## 状态
 
-🚧 建设中：首期追踪待撰写（见 [roadmap](../docs/roadmap.md) v0.3）。认领请提 [内容提议](../.github/ISSUE_TEMPLATE/content_proposal.yml)，注明归属 `hotspot`。
+✅ 已完成首期追踪：见 [2026-09 月度档案](2026-09/llm-inference-hotspots-2026-09-25.md)。
