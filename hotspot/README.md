@@ -8,6 +8,7 @@
 
 | 文件名 | 入口 | 内容简介 |
 |---|---|---|
+| `llm-inference-hotspots-2026-09-30.md` | [2026-09 月度档案](2026-09/llm-inference-hotspots-2026-09-30.md) | 2026-09-29 大模型推理优化每日热点，涵盖 vLLM 的 KV 传输与前缀缓存约束、SGLang 的 Dspark/P-D 协同、TensorRT-LLM 的 warmup/KV transfer/FP8 稳定性，以及累计趋势与执行清单。 |
 | `llm-inference-hotspots-2026-09-25.md` | [2026-09 月度档案](2026-09/llm-inference-hotspots-2026-09-25.md) | 2026-09-24 大模型推理优化每日热点，涵盖 vLLM、SGLang、TensorRT-LLM、Hugging Face Optimum、KV Cache、投机解码、量化、异构硬件及可追溯来源。 |
 | `system_prompt.md` | [当前任务提示词](system_prompt.md) | 当前任务的提示词整理版，包含资料采集标准、热点档案格式、月度归档规则、README 刷新规则与远端同步要求。 |
 
