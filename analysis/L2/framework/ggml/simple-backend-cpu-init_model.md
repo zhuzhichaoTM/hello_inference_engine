@@ -2,9 +2,17 @@
 
 ## 0 概述
 
+![simple-backend.cpp 整体流程图](simple-backend-cpp-overview.png)
+
+> 上图作为本文档的总览入口：先从 `main()` 的整体流程理解程序阶段，再进入 `init_model()` 的后端初始化、backend 实例创建和多后端 scheduler 构造细节。图中后续的构图、执行、结果读取和资源释放阶段，分别对应 `simple-backend-cpu-build_graph.md` 与 `simple-backend-cpu-compute.md`。
+
 ### 0.1 调试目标
 
 本文基于 `examples/simple/simple-backend.cpp` 的断点调试过程，围绕 `init_model()` 这一函数，追踪 GGML 后端系统的初始化链路，理解以下机制：
+
+![init_model 详细流程](simple-backend-init_model-detail.png)
+
+> 该图作为 `init_model()` 章节的详细流程入口，展示日志配置、后端动态库加载、首选 backend 创建、CPU backend 创建、多后端 scheduler 创建，以及 scheduler 内部关键结构的初始化关系。
 
 - GGML 计时设施初始化 `ggml_time_init()`；
 - 后端动态库的发现、加载与注册；
