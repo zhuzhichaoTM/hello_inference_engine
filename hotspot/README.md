@@ -8,6 +8,7 @@
 
 | 文件名 | 入口 | 内容简介 |
 |---|---|---|
+| `llm-inference-hotspots-2026-10-13.md` | [2026-10 月度档案](2026-10/llm-inference-hotspots-2026-10-13.md) | 2026-10-12 大模型推理优化每日热点，涵盖 vLLM 的 MoRI-IO KV 请求状态机与 HiSparse/稀疏 MLA/EPLB、SGLang 的 HiCache MTP/Mamba 状态完整性与 PD 失败语义、TensorRT-LLM 的 KV cache manager V2 转默认（破坏性变更）、llama.cpp 的 KV 维度对齐与图重分配可观测性。 |
 | `llm-inference-hotspots-2026-10-02.md` | [2026-10 月度档案](2026-10/llm-inference-hotspots-2026-10-02.md) | 2026-10-01 大模型推理优化每日热点，涵盖 vLLM 的 NIXL KV 生命周期与 HiSparse/NVFP4、SGLang 的 PD/HiCache/DSpark 与 AMD 路径、TensorRT-LLM 的 sparse KV offload 与 retirement deadline、llama.cpp 的 MTP/NVFP4 与多后端稳定性。 |
 | `llm-inference-hotspots-2026-10-01.md` | [2026-10 月度档案](2026-10/llm-inference-hotspots-2026-10-01.md) | 2026-09-30 大模型推理优化每日热点，涵盖 vLLM 的 Mamba/MTP 与 ROCm/MLA、SGLang 的 EAGLE3/DFlash/DSpark、TensorRT-LLM 的 KVCacheManager V2 与分离 KV 复用、llama.cpp 的 DFlash 与 batch 顺序。 |
 | `llm-inference-hotspots-2026-09-30.md` | [2026-09 月度档案](2026-09/llm-inference-hotspots-2026-09-30.md) | 2026-09-29 大模型推理优化每日热点，涵盖 vLLM 的 KV 传输与前缀缓存约束、SGLang 的 Dspark/P-D 协同、TensorRT-LLM 的 warmup/KV transfer/FP8 稳定性，以及累计趋势与执行清单。 |
@@ -25,3 +26,7 @@
 ## 状态
 
 ✅ 已完成首期追踪：见 [2026-09 月度档案](2026-09/llm-inference-hotspots-2026-09-25.md)。
+
+✅ 最新一期：2026-10-13 档案（覆盖 2026-10-12），见 [2026-10 月度档案](2026-10/llm-inference-hotspots-2026-10-13.md)。
+
+> **归档空档说明：** 2026-10-03 至 2026-10-12 未产生每日档案（自动化任务未执行），本期不补写中间日期内容，仅按各自关注窗口采集。如需回溯该区间，请以各引擎官方提交 API 按日期区间重新采集。
