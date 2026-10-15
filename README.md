@@ -4,7 +4,6 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Docs Lint](https://github.com/zhuzhichaoTM/hello_inference_engine/actions/workflows/docs-lint.yml/badge.svg)](https://github.com/zhuzhichaoTM/hello_inference_engine/actions/workflows/docs-lint.yml)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/zhuzhichaoTM/hello_inference_engine)
 [![GitHub stars](https://img.shields.io/github/stars/zhuzhichaoTM/hello_inference_engine?style=social)](https://github.com/zhuzhichaoTM/hello_inference_engine/stargazers)
 [![GitHub last commit](https://img.shields.io/github/last-commit/zhuzhichaoTM/hello_inference_engine)](https://github.com/zhuzhichaoTM/hello_inference_engine/commits/main)
 
