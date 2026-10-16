@@ -8,6 +8,7 @@
 
 | 文件名 | 入口 | 内容简介 |
 |---|---|---|
+| `llm-inference-hotspots-2026-10-16.md` | [2026-10 月度档案](2026-10/llm-inference-hotspots-2026-10-16.md) | 2026-10-15 大模型推理优化每日热点，涵盖 vLLM 官方博客双发（Push 模式 NIXL KV 传输：TTFT 最高 3×、TPOT 最高 30%；无 confidence head 的自适应验证在线估计器）、vLLM 89 条提交（KV offload 并发正确性、UMBP 契约第一片、DeepGEMM MegaMoE 统一并新增 NVFP4、移除 Medusa/MLP speculator）、SGLang 68 条提交（HiCache `page_unified` 布局与统一 L3 key、tail-only SWA 备份、DSv4.1 请求窗口 KV 融合）、TensorRT-LLM v1.4.0rc0 发布（含两项 BREAKING）、llama.cpp v0.7.0 发布（host 专家 GPU 缓存、LiliCorr、默认端口改 9931）。 |
 | `llm-inference-hotspots-2026-10-13.md` | [2026-10 月度档案](2026-10/llm-inference-hotspots-2026-10-13.md) | 2026-10-12 大模型推理优化每日热点，涵盖 vLLM 的 MoRI-IO KV 请求状态机与 HiSparse/稀疏 MLA/EPLB、SGLang 的 HiCache MTP/Mamba 状态完整性与 PD 失败语义、TensorRT-LLM 的 KV cache manager V2 转默认（破坏性变更）、llama.cpp 的 KV 维度对齐与图重分配可观测性。 |
 | `llm-inference-hotspots-2026-10-02.md` | [2026-10 月度档案](2026-10/llm-inference-hotspots-2026-10-02.md) | 2026-10-01 大模型推理优化每日热点，涵盖 vLLM 的 NIXL KV 生命周期与 HiSparse/NVFP4、SGLang 的 PD/HiCache/DSpark 与 AMD 路径、TensorRT-LLM 的 sparse KV offload 与 retirement deadline、llama.cpp 的 MTP/NVFP4 与多后端稳定性。 |
 | `llm-inference-hotspots-2026-10-01.md` | [2026-10 月度档案](2026-10/llm-inference-hotspots-2026-10-01.md) | 2026-09-30 大模型推理优化每日热点，涵盖 vLLM 的 Mamba/MTP 与 ROCm/MLA、SGLang 的 EAGLE3/DFlash/DSpark、TensorRT-LLM 的 KVCacheManager V2 与分离 KV 复用、llama.cpp 的 DFlash 与 batch 顺序。 |
@@ -27,6 +28,6 @@
 
 ✅ 已完成首期追踪：见 [2026-09 月度档案](2026-09/llm-inference-hotspots-2026-09-25.md)。
 
-✅ 最新一期：2026-10-13 档案（覆盖 2026-10-12），见 [2026-10 月度档案](2026-10/llm-inference-hotspots-2026-10-13.md)。
+✅ 最新一期：2026-10-16 档案（覆盖 2026-10-15），见 [2026-10 月度档案](2026-10/llm-inference-hotspots-2026-10-16.md)。
 
-> **归档空档说明：** 2026-10-03 至 2026-10-12 未产生每日档案（自动化任务未执行），本期不补写中间日期内容，仅按各自关注窗口采集。如需回溯该区间，请以各引擎官方提交 API 按日期区间重新采集。
+> **归档空档说明：** 2026-10-03 至 2026-10-11 未产生每日档案（自动化任务未执行）；2026-10-13、2026-10-14 两日亦无档案（2026-10-13 档案覆盖 2026-10-12，2026-10-16 档案覆盖 2026-10-15）。本目录不补写中间日期内容，各期仅按自身关注窗口采集。如需回溯该区间，请以各引擎官方提交 API 按日期区间重新采集。
