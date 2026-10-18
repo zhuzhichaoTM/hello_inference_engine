@@ -1,0 +1,409 @@
+# ============================================================================
+# 优化方案库（Optimization Plan Library）· 对应工程闭环第 4 步「优化实施」
+# ----------------------------------------------------------------------------
+# 每个条目是一张「可执行卡片」：改什么、期望收益、代价、风险、如何回滚。
+# `perfkit optimize` 会读取 diagnose.json 的瓶颈结论，按 applicable_when
+# 条件筛选出候选方案并排序，产出 optimize.json 与可直接运行的启动命令。
+#
+# 收益口径：gain.decode_tps 为「相对基线的 Decode 吞吐倍数」，
+# 来源标注同 model 配置：[M] 实测 / [L] 文献经验值 / [D] 推导。
+#
+# 本文件的所有实测收益来自 2026-10-18 的 RTX 4090 D 真机矩阵
+# （llama-bench + llama-server，原始数据见 ledger.json 与报告 §2/§5）。
+# ============================================================================
+
+plans:
+  # ---------------------------------------------------------------- 量化类
+  - id: quant_q4km_ud
+    name: UD 动态量化主模型（Q4_K_M + 首末层升精度）
+    category: quantization
+    layer: model
+    applicable_when: [memory_bound, always]
+    gain: {decode_tps: 1.00, vram_gib: -1.20, ppl_delta_pct: 0.0}
+    source: "[M] 本部署基准档位（有效权重 14.997 GiB / 26.90B 参数）"
+    cost: 需重新量化或下载（~16GB），一次性成本
+    risk: 低。**PPL 已实测**：Q4_K_M 5.8216 vs Q6_K 5.8059（+0.27%），远低于 2% 红线（WikiText-2，40 chunks）
+    how: 使用 unsloth 动态量化产物，FFN 混用 IQ4_XS/Q4_K/Q3_K，注意力头升精度到 Q5_K/Q6_K
+    rollback: 换回 F16（不可行，24GB 装不下）或 Q5_K_M
+
+  - id: quant_q5km
+    name: 升档到 Q5_K_M（精度换速度的反向权衡）
+    category: quantization
+    layer: model
+    applicable_when: [ppl_regression]
+    gain: {decode_tps: 0.89, vram_gib: 3.27, ppl_delta_pct: -0.6}
+    source: "[D] 由 bytes 比例 19.77/16.46 反推带宽受限下的速率比"
+    cost: 显存 +3.27GiB，Decode 速率按带宽比例下降约 11%
+    risk: 低
+    how: 替换主模型 gguf 文件
+    rollback: 换回 Q4_K_M
+
+  # ------------------------------------------------------------ 投机解码类
+  - id: spec_mtp
+    name: MTP 投机解码（Multi-Token Prediction）
+    category: speculative
+    layer: runtime
+    applicable_when: [memory_bound, decode_latency]
+    gain: {decode_tps: 1.77, vram_gib: 1.28, ttft_ms: 0.10}
+    source: >
+      [M] 单流 49.21 → 87.27 t/s（+77.3%）；32K 上下文 44.12 → 65.16 t/s（+47.7%）；
+      接受率实测 0.371~0.510，平均接受长度 2.10~2.52
+    cost: 显存 +1.28GiB；Draft 必须全层卸载（-ngld 99），否则走 CPU 反而更慢
+    risk: >
+      中。接受率强依赖任务类型（代码/结构化输出高，自由创作低）；
+      温度采样下接受率下降。**注意**：旧报告称「多槽位并发时建议关闭 MTP」，
+      本次实测不成立 —— MTP + 双槽位 112.95 t/s，明显高于关 MTP 的 65.57 t/s。
+    how: -md mtp-*.gguf --spec-type draft-mtp -ngld 99
+    rollback: 去掉 -md / --spec-type 参数即可，无副作用
+
+  - id: spec_ngram
+    name: n-gram / 检索式草稿（零显存代价投机）
+    category: speculative
+    not_selected_reason: "MTP 已提供 1.77× 的投机收益且接受率可测（0.37~0.51）；n-gram 的收益（1.15×）明显更低，且接受率对自由生成可能 <10%。两者叠加无意义（都靠减少读取次数）"
+    layer: runtime
+    applicable_when: [memory_bound, zero_vram_budget]
+    gain: {decode_tps: 1.15, vram_gib: 0.0}
+    source: "[L] 摘要/改写/代码补全类任务接受率可达 30~60%"
+    cost: 无显存代价，纯 CPU 侧开销
+    risk: >
+      高。自由生成场景接受率可能 <10%，反而因验证开销拖慢；
+      仅适用于输出与输入高度重叠的任务（摘要、翻译、代码编辑）。
+    how: 启用 n-gram 草稿，需实测接受率后再决定是否保留
+    rollback: 关闭开关
+
+  # --------------------------------------------------------------- KV 类
+  - id: kv_mixed_q8q4
+    name: KV Cache 混合量化（K=q8_0 / V=q4_0）
+    category: kv_cache
+    layer: runtime
+    applicable_when: [long_context, memory_bound, kv_cache_pressure]
+    gain: {decode_tps: 0.88, vram_gib: -0.65, kv_cache_gib: -0.65}
+    source: >
+      [M] 同深度（32K）单流对照：f16 45.37 → q8q4 39.45 t/s（-13.0%）；
+      显存对照：f16 19,683 MiB → q8q4 17,463 MiB（-2,220 MiB，含 2 槽位）
+    cost: >
+      **速度有代价，不是免费的**：本构建的 CUDA FlashAttention 没有
+      q8_0-q4_0 的向量化 kernel，启动日志明确警告
+      「no FlashAttention vector kernel compiled for K/V types q8_0-q4_0,
+      converting K and V to f16 instead (slow)」，因此每次注意力都要先转 f16。
+    risk: >
+      中。K 保 q8_0 是刻意的：Key 决定注意力检索精度，Value 对精度更鲁棒。
+      但要注意 q8q4 恰好是唯一没有 FA 向量 kernel 的组合 ——
+      若长上下文单流吞吐是硬指标，应改用 q8_0/q8_0（+0.65 GiB 显存，速度回到 44.69）。
+    how: --cache-type-k q8_0 --cache-type-v q4_0
+    rollback: 改回 --cache-type-k f16 --cache-type-v f16（显存 +2.2 GiB，MTP+双槽位下会超限）
+
+  - id: kv_q8q8
+    name: KV Cache 对称 q8_0（本构建的甜点档）
+    category: kv_cache
+    not_selected_reason: "实测单流 92.60 t/s 略高于 q8q4 的 87.27，长上下文单流也更快（62.41 vs 65.16 接近）；但显存 20,383 MiB 使余量降到 4.08 GiB，**贴近 4.0 GiB 硬约束**。本次选 q8q4 是为了留出抗峰值的余量；若只跑单流、不追求并发，q8q8 是更优选择"
+    layer: runtime
+    applicable_when: [long_context, memory_bound, kv_cache_pressure]
+    gain: {decode_tps: 0.985, vram_gib: -1.0, kv_cache_gib: -1.0}
+    source: >
+      [M] 同深度（32K）单流对照：f16 45.37 → q8_0/q8_0 44.69 t/s（-1.5%）；
+      显存对照：MTP+双槽位下 q8q8 20,383 MiB vs q8q4 19,871 MiB
+    cost: 显存比 q8q4 多 0.65 GiB
+    risk: >
+      低。**这是本构建下唯一「省显存且几乎不掉速」的 KV 档位** ——
+      q8_0/q8_0 有原生 FA 向量 kernel，不需要转换。
+      代价是显存余量从 4.58 GiB 降到 4.08 GiB，贴近 4.0 GiB 的硬约束。
+    how: --cache-type-k q8_0 --cache-type-v q8_0
+    rollback: 改回 q8_0/q4_0
+
+  - id: kv_q4q4
+    name: KV Cache 全 q4_0（激进档）
+    category: kv_cache
+    not_selected_reason: "32K 单流实测 44.75 t/s（与 f16 的 45.37 几乎相同），但 K 也降到 q4_0 会直接损伤注意力检索精度 —— 收益为零、风险最高，无采用理由"
+    layer: runtime
+    applicable_when: [kv_pressure, extreme_memory]
+    gain: {decode_tps: 0.986, vram_gib: -1.3}
+    source: "[M] 同深度（32K）单流：44.75 t/s（与 f16 的 45.37 差 1.4%）；相对 F16 节省 75%"
+    cost: 精度损失集中体现在长上下文检索与 needle-in-haystack
+    risk: 高。32K 以上可能出现「答非所问」「忽略中段信息」
+    how: --cache-type-k q4_0 --cache-type-v q4_0
+    rollback: 回到 q8_0/q4_0
+
+  # -------------------------------------------------------------- 内核类
+  - id: kernel_flash_attn
+    name: Flash Attention 在线注意力
+    category: kernel
+    layer: kernel
+    applicable_when: [prefill_bound, long_context, memory_bound]
+    gain: {prefill_tps: 1.11, vram_gib: -0.80}
+    source: >
+      [M] 同配置 on/off 对照：Prefill 3064.7 → 2765.5 t/s（+10.8%）；
+      Decode 50.52 → 50.37 t/s（持平）。64K 下避免 O(N²) 注意力矩阵落显存
+    cost: 无（近似算法，但误差在可接受范围）
+    risk: >
+      低。注意新版 llama.cpp 必须写 --flash-attn on 而非裸 --flash-attn。
+      **量化 KV 的 kernel 覆盖不完整**：q8_0-q4_0 会回退到 f16 转换（见 kv_mixed_q8q4）
+    how: --flash-attn on
+    rollback: --flash-attn off
+
+  - id: kernel_fa_quants_rebuild
+    name: 重编译 FlashAttention 量化 kernel（补 q8_0-q4_0）
+    category: kernel
+    not_selected_reason: "本次未执行重编译（需要重新构建 30 分钟），已列为 P0 后续项；它的收益（+12%）只在 q8q4 配置上成立，而 q8q8 已能达到相近吞吐"
+    layer: kernel
+    applicable_when: [long_context, kv_cache_pressure]
+    gain: {decode_tps: 1.12}
+    source: >
+      [D] 由「q8q4 32K 单流 39.45 vs f16 45.37（-13.0%）」反推：
+      消除转换开销即可回收这部分损失
+    cost: 需重新编译 llama.cpp（GGML_CUDA_FA_QUANTS 环境变量），不改代码
+    risk: 低。纯编译开关；需验证编译产物在 32K 上下文下数值一致
+    how: >
+      GGML_CUDA_FA_QUANTS=q8_0-q4_0（及需要的其它组合）重新 cmake --build；
+      启动日志应不再出现 "no FlashAttention vector kernel compiled"
+    rollback: 用回旧构建
+
+  - id: kernel_cuda_graph
+    name: CUDA Graph 捕获（消除 Kernel Launch 开销）
+    category: kernel
+    not_selected_reason: "本构建的 CUDA Graph 默认已启用（日志 graphs reused 稳定增长、realloc=0），因此没有额外可捕获的空间；收益估算 1.05× 已包含在现有基线里"
+    layer: kernel
+    applicable_when: [launch_bound, decode_latency]
+    gain: {decode_tps: 1.05}
+    source: "[D] 64 层 × ~10 kernel ≈ 640 次 launch，按 3~5µs/次计 ≈ 2~3ms/step"
+    cost: 需固定 batch/ctx 形状，与动态 shape 冲突
+    risk: >
+      中。llama.cpp 的 CUDA Graph 对 slot 数量与 batch 形状敏感；
+      开启后长上下文场景可能因图重捕获抖动。本次构建的日志显示
+      graphs reused 稳定增长（无 realloc），说明图复用已生效。
+    how: 编译期开启 GGML_CUDA_GRAPHS，运行时配合 --parallel 固定槽位
+    rollback: 关闭编译开关
+
+  - id: kernel_fused_qkv
+    name: QKV 融合 + FFN 门控融合
+    category: kernel
+    not_selected_reason: "收益上限 1.02×、需改 ggml 图构建代码 —— 改动成本远大于收益，在带宽已榨干 92.9% 的前提下优先级最低"
+    layer: kernel
+    applicable_when: [memory_bound]
+    gain: {decode_tps: 1.02}
+    source: "[L] 减少中间张量往返显存，Decode 阶段收益有限（权重读取占主导）"
+    cost: 需改 ggml 图构建代码
+    risk: 中。收益小、改动大，性价比最低，建议最后考虑
+    how: 在 ggml 图构建阶段合并 QKV 权重为单个 tensor
+    rollback: 还原图构建
+
+  # ------------------------------------------------------------ 并发/调度类
+  - id: sched_parallel2
+    name: 双槽位并发（--parallel 2）
+    category: scheduling
+    layer: runtime
+    applicable_when: [throughput_bound, multi_user]
+    gain: {decode_tps_system: 4.88, decode_tps: 0.99}
+    source: >
+      [M] 系统吞吐 23.14（基线单槽位串行）→ 112.95 t/s；
+      人均 69.0 t/s（MTP 配置）
+    cost: 单槽上下文减半（64K 总量 → 每槽 32K）
+    risk: 低。需同步把客户端 Context Length 调成与服务端一致，否则 400 报错
+    how: --parallel 2 --ctx-size 65536（单槽 32K）
+    rollback: --parallel 1
+
+  - id: sched_batch_tune
+    name: batch/ubatch 调优
+    category: scheduling
+    layer: runtime
+    applicable_when: [prefill_bound, throughput_bound]
+    gain: {prefill_tps: 1.00}
+    source: >
+      [M] 实测无差异：b=1024/2048/4096 在 8K prompt 下 Prefill 3054/3046/3041 t/s，
+      Decode 50.54/50.58/50.57 t/s —— 4090 上 1024/512 已是甜点区
+    cost: 显存随 ubatch 线性增长
+    risk: 低。**本项已无可争取收益**，保留在方案库中是为了避免重复调参
+    how: --batch-size 1024 --ubatch-size 512（默认即可）
+    rollback: 恢复默认
+
+  # ------------------------------------------------------- 端侧专属方案
+  - id: ondevice_weight_streaming
+    name: 逐层权重 Streaming（大模型跑小内存设备）
+    category: ondevice
+    layer: runtime
+    applicable_when: [on_device, weight_exceeds_ram]
+    gain: {decode_tps: 0.15}
+    source: "[D] 27B 权重远超常见端侧设备内存，必须按层流式加载，速度受存储 IO 限制"
+    cost: 需要高速存储（UFS 4.0 读 ~4GB/s），每 token 需读 15GiB
+    risk: >
+      高。理论速率 ≈ 4GB/s ÷ 15.33GiB ≈ 0.26 t/s，不可接受。
+      端侧跑 27B 必须改用更激进的 2-bit 量化 + 模型剪裁，或改端云协同。
+    how: mmap + MADV_WILLNEED 预取 + 逐层加载
+    rollback: 降级到 3B/7B 模型
+
+  - id: ondevice_npu_offload
+    name: NPU 卸载边界判定（端侧专属）
+    category: ondevice
+    layer: hardware
+    applicable_when: [on_device, npu_available]
+    gain: {decode_tps: null, power_w: -0.35}
+    source: "[L] NPU 能效比 GPU 高 3~5×，但算子覆盖与动态 shape 支持是硬约束"
+    cost: 图分区 + CPU fallback 引入同步开销
+    risk: >
+      高。多数移动 NPU 只吃 INT8/INT16 定点，对 27B 的 Q4_K_M 权重无原生支持，
+      需要离线重编译 + 算子替换。混合架构（SSM 层）在移动 NPU 上的算子覆盖
+      尤其不确定。收益不确定，需先做算子覆盖率扫描。
+    how: 先用 QNN/RKNN/Core ML 工具链跑算子支持矩阵扫描，再决定分区边界
+    rollback: 全量回退 CPU/GPU 后端
+
+# ---- 优化基线（Optimization Baseline）--------------------------------------
+# 术语约定：本框架中「基线」= 可用的朴素生产配置（全层 GPU 卸载 + FA + 64K ctx +
+# 单槽位 + F16 KV + 无投机解码），而非「优化后配置的子集」。
+# 这样每一项优化都有独立的可归因收益，也避免了「预支优化收益」导致的重复计数。
+optimization_baseline:
+  id: B0_baseline
+  name: 基线（全层卸载 + FA，64K ctx，单槽位，F16 KV，无 MTP）
+  plans: [quant_q4km_ud, kernel_flash_attn]
+  startup_flags: [-ngl 99, --parallel 1, --ctx-size 65536, "--flash-attn on"]
+  rationale: >
+    64K ctx 是业务的硬需求（多轮工程对话实测需 ~34K），因此基线也必须是
+    64K 可用的配置 —— 否则「长上下文」这一项优化会被预支到基线里。
+    基线保持单槽位 + F16 KV + 无投机解码，即「朴素但可用」。
+  measured: {decode_tps: 49.21, prefill_tps: 2641.34, band_util: 0.814,
+             decode_tps_32k: 44.12, decode_tps_system: 23.14,
+             peak_vram_mib: 19563, temp_c: 68}
+  source: "ledger.json · B0 与 §2 的 llama-bench 矩阵"
+
+# ---- 方案组合模板（bundle）：把互相兼容的方案打包成可对比的候选配置 -------
+bundles:
+  - id: B0_baseline
+    name: 基线（64K / 单槽 / F16 KV / 无 MTP）
+    plans: [quant_q4km_ud, kernel_flash_attn]
+    startup_flags: [-ngl 99, --parallel 1, --ctx-size 65536, "--flash-attn on"]
+    expected: {decode_tps: 49.21, peak_vram_gib: 18.95, ctx_total: 65536}
+    measured:
+      decode_tps: 49.21
+      decode_tps_32k: 44.12
+      decode_tps_system: 23.14
+      band_util: 0.814
+      temp_c: 68
+      mtp_accept_rate: 0.0
+      prefill_tps: 2641.34
+      ttft_ms: 258.5
+      peak_vram_mib: 19563
+      safety_margin_gib: 4.88
+      # 基线这一档只采了显存峰值，未单独采功耗/温度/gpu_util
+      # —— 不拿别的配置的数字顶上（那会变成伪造测量）。
+      gpu_util: null
+      power_w: null
+      temp_c: null
+    measured_source: "真机：llama-server p1/64K/f16 + llama-bench（显存与吞吐）；功耗/温度未单独采样"
+
+  - id: B1_f16_p2
+    name: 双槽位 + F16 KV（64K）
+    plans: [quant_q4km_ud, kernel_flash_attn, sched_parallel2]
+    startup_flags: [-ngl 99, --parallel 2, --ctx-size 65536, "--flash-attn on"]
+    expected: {decode_tps: 49.12, decode_tps_system: 61.47, peak_vram_gib: 19.22}
+    measured:
+      decode_tps: 49.12
+      decode_tps_32k: 44.31
+      decode_tps_system: 61.47
+      ttft_ms: 260.4
+      peak_vram_mib: 19683
+      safety_margin_gib: 4.77
+      gpu_util: 0.88
+      power_w: 422.8
+      temp_c: 68
+    measured_source: "真机：C_prod_f16"
+
+  - id: B2_q8q4_p2
+    name: 双槽位 + KV 混合量化 q8_0/q4_0（64K）
+    plans: [quant_q4km_ud, kernel_flash_attn, kv_mixed_q8q4, sched_parallel2]
+    startup_flags: [-ngl 99, --parallel 2, --ctx-size 65536,
+                    --cache-type-k q8_0, --cache-type-v q4_0, "--flash-attn on"]
+    expected: {decode_tps: 48.37, decode_tps_system: 65.57, peak_vram_gib: 17.05}
+    measured:
+      decode_tps: 48.37
+      decode_tps_32k: 39.00
+      decode_tps_system: 65.57
+      ttft_ms: 273.9
+      peak_vram_mib: 17463
+      safety_margin_gib: 6.93
+      gpu_util: 0.89
+      power_w: 423.2
+      temp_c: 67
+    measured_source: "真机：B_prod_q8q4"
+
+  - id: B3_mtp_p1
+    name: MTP 投机解码 + 单槽位 + q8_0/q4_0（64K）
+    plans: [quant_q4km_ud, kernel_flash_attn, spec_mtp, kv_mixed_q8q4]
+    startup_flags: [-ngl 99, '-md "{draft}"', "--spec-type draft-mtp", -ngld 99,
+                    --parallel 1, --ctx-size 65536,
+                    --cache-type-k q8_0, --cache-type-v q4_0, "--flash-attn on"]
+    expected: {decode_tps: 89.27, peak_vram_gib: 18.86}
+    measured:
+      decode_tps: 89.27
+      decode_tps_32k: 63.13
+      decode_tps_system: 61.61
+      mtp_accept_rate: 0.45
+      ttft_ms: 359.5
+      peak_vram_mib: 19315
+      safety_margin_gib: 5.12
+      gpu_util: 0.81
+      power_w: 411.6
+      temp_c: 68
+    measured_source: "真机：D_mtp_q8q4"
+
+  - id: B4_mtp_p2_q8q4
+    name: MTP + 双槽位 + q8_0/q4_0（64K）· 本次选定
+    plans: [quant_q4km_ud, kernel_flash_attn, spec_mtp, kv_mixed_q8q4, sched_parallel2]
+    startup_flags: [-ngl 99, '-md "{draft}"', "--spec-type draft-mtp", -ngld 99,
+                    --parallel 2, --ctx-size 65536,
+                    --cache-type-k q8_0, --cache-type-v q4_0, "--flash-attn on"]
+    expected: {decode_tps: 87.27, decode_tps_system: 112.95, peak_vram_gib: 19.41}
+    measured:
+      decode_tps: 87.27
+      decode_tps_32k: 65.16
+      decode_tps_system: 112.95
+      decode_tps_system_range: [110.13, 121.29]
+      mtp_accept_rate: 0.45
+      ttft_ms: 340.5
+      peak_vram_mib: 19871
+      safety_margin_gib: 4.58
+      gpu_util: 0.75
+      power_w: 412.1
+      temp_c: 63
+    measured_source: "真机：G_mtp_p2 / J_mtp_q8q4（4 轮并发中位数）"
+
+  - id: B5_mtp_p2_q8q8
+    name: MTP + 双槽位 + q8_0/q8_0（64K）
+    plans: [quant_q4km_ud, kernel_flash_attn, spec_mtp, kv_q8q8, sched_parallel2]
+    startup_flags: [-ngl 99, '-md "{draft}"', "--spec-type draft-mtp", -ngld 99,
+                    --parallel 2, --ctx-size 65536,
+                    --cache-type-k q8_0, --cache-type-v q8_0, "--flash-attn on"]
+    expected: {decode_tps: 92.60, decode_tps_system: 103.14, peak_vram_gib: 19.91}
+    measured:
+      decode_tps: 92.60
+      decode_tps_32k: 62.41
+      decode_tps_system: 103.14
+      ttft_ms: 340.5
+      peak_vram_mib: 20383
+      safety_margin_gib: 4.08
+      gpu_util: 0.77
+      power_w: 412.6
+      temp_c: 65
+    measured_source: "真机：I_mtp_p2_q8q8 / K_mtp_q8q8"
+
+  - id: B6_mmproj
+    name: 双槽位 + q8_0/q4_0 + 多模态 mmproj（64K）
+    plans: [quant_q4km_ud, kernel_flash_attn, kv_mixed_q8q4, sched_parallel2]
+    startup_flags: [-ngl 99, "--mmproj {mmproj}", --parallel 2, --ctx-size 65536,
+                    --cache-type-k q8_0, --cache-type-v q4_0, "--flash-attn on"]
+    expected: {decode_tps: 48.72, peak_vram_gib: 18.16}
+    measured:
+      decode_tps: 48.72
+      decode_tps_32k: 39.66
+      decode_tps_system: 69.33
+      ttft_ms: 266.5
+      peak_vram_mib: 18599
+      safety_margin_gib: 5.82
+      gpu_util: 0.86
+      power_w: 423.7
+      temp_c: 69
+      vision_prefill_ms: 493.3
+    measured_source: "真机：E_mmproj / F_mm（多模态回答「红色」正确）"
+
+# ---- 选定方案（verify 阶段以此为「优化后」配置）---------------------------
+selected_bundle: B4_mtp_p2_q8q4
+compare_bundles: [B0_baseline, B1_f16_p2, B2_q8q4_p2, B3_mtp_p1,
+                  B4_mtp_p2_q8q4, B5_mtp_p2_q8q8, B6_mmproj]

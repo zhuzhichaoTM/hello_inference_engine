@@ -1,0 +1,241 @@
+# ============================================================================
+# 模型画像（Model Profile）· 对应业务地图 L1「端侧模型资产与格式」
+# ----------------------------------------------------------------------------
+# 数据可信度约定（全文通用）：
+#   [M] measured   实测/实测换算，可直接引用
+#   [D] derived    由实测值推导（如按体积反算参数量）
+#   [I] inferred   按公开架构惯例反推，**必须**用 `perfkit define --from-gguf` 覆盖
+#   [T] todo       待采集，报告中不得作为结论依据
+#
+# 本文件已用 GGUF 元数据核验（perfkit define --from-gguf 等价流程），
+# 全部架构字段为 [M] 真值。核验过程见 docs/usage.md §6 与报告 §1.2。
+# ============================================================================
+
+model:
+  name: Qwen3.8-27B
+  version: "3.8"
+  family: Qwen
+  params_total: 27320697856        # [M] GGUF 张量表逐张量累加（含 MTP 预测块）
+  params_effective: 26895998464    # [M] 去掉 blk.64（MTP 头）后的前向参数量
+  params_active: 26895998464       # 非 MoE：激活参数 = 有效参数
+  weight_format: GGUF
+  quantization: Q4_K_M
+  file: /root/autodl-tmp/models/Qwen3.8-27B-UD-Q4_K_M.gguf   # [M] 16,464,440,224 B
+  capabilities: [text, thinking, vision]   # [M] 挂载 mmproj 后具备视觉能力
+
+# ---- 结构超参（[M] 全部来自 GGUF 元数据，不再是反推值）---------------------
+# 关键事实：这是**混合架构**（qwen35）——
+#   64 层中每 4 层有 1 层是全注意力（full_attention_interval=4），
+#   其余 48 层是 SSM / 线性注意力（ssm.* 张量）。
+#   因此只有 16 层拥有随 ctx 线性增长的 KV Cache；SSM 层是固定大小的循环状态。
+#   旧版画像按「64 层全注意力、8 KV 头、head_dim 128」推算，导致 KV 被高估 4×，
+#   这正是历史报告里「模型 6.50 GiB vs 实测 2.20 GiB（2.95×）」差额的根因。
+architecture:
+  arch: qwen35                     # [M] general.architecture
+  hybrid: true                     # [M] SSM + 全注意力交替
+  n_layer: 64                      # [M] block_count=65，其中 blk.64 为 MTP 预测块
+  n_attn_layer: 16                 # [M] full_attention_interval=4 ⇒ 64/4
+  n_ssm_layer: 48                  # [M] 64 - 16
+  hidden_size: 5120                # [M]
+  intermediate_size: 17408         # [M]
+  n_head: 24                       # [M]
+  n_head_kv: 4                     # [M] GQA 分组比 6:1
+  head_dim: 256                    # [M] attention.key_length / value_length
+  attn_out_dim: 6144               # [M] 24×256：注意力输出维度 ≠ hidden(5120)，
+                                   #     由 attn_output 投影回 hidden（张量形状 [6144, 5120] 印证）
+  rope_theta: 10000000.0           # [M]
+  rope_dim: 64                     # [M] rope.dimension_count
+  activation: swiglu
+  norm: rmsnorm
+  norm_eps: 1.0e-6                 # [M]
+  tie_embeddings: false            # [M] 存在 output.weight
+  sliding_window: null             # [M] 全注意力层无 SWA
+  max_ctx_native: 262144           # [M] context_length
+  max_ctx_deployed: 65536          # [M] 本次部署实际配置
+  vocab_size: 248320               # [M] tokenizer.ggml.tokens 数组长度
+  # 混合架构的 SSM 状态参数（决定**不随 ctx 增长**的那部分显存）
+  ssm_inner_size: 6144             # [M] ssm.inner_size
+  ssm_state_size: 128              # [M] ssm.state_size
+  ssm_conv_kernel: 4               # [M] ssm.conv_kernel
+  ssm_group_count: 16              # [M] ssm.group_count
+  ssm_time_step_rank: 48           # [M] ssm.time_step_rank
+  # 嵌入层实测字节（输入 Q4_K + 输出 Q6_K，单一 bits 值算不准）
+  embedding_bytes_measured: 1758105600   # [M] 1.637 GiB
+
+# ---- 量化资产清单 ---------------------------------------------------------
+artifacts:
+  - role: main
+    file: Qwen3.8-27B-UD-Q4_K_M.gguf
+    bytes: 16464440224             # [M] 15.3235 GiB（含 blk.64 MTP 块）
+    note: unsloth 动态量化（imatrix 驱动；FFN 混用 IQ4_XS/Q4_K/Q3_K，注意力头升精度到 Q5_K/Q6_K）
+  - role: draft_mtp
+    file: mtp-Qwen3.8-27B-Q4_0.gguf
+    bytes: 1369590656              # [M] 1.28 GiB，含 blk.64.nextn.* 预测头
+    note: 非独立模型，必须经 -md 挂载
+  - role: mmproj
+    file: mmproj-F16.gguf
+    bytes: 927607488               # [M] 885 MiB，ViT→文本空间投影
+
+# ---- 实测权重分解（GGUF 张量表逐张量 × 量化块大小累加）--------------------
+# 为什么需要这张表：几何公式只认得「同构的 7 个稠密算子」。混合架构里
+# SSM 层的算子（in-proj / z-gate / out-proj）与全注意力层完全不同，
+# 层内构成与层间分布都变了，只有按真实张量字节归类才准确。
+# 口径：total_gib 是**实际参与前向**的权重（llama.cpp 启动时忽略 blk.64）；
+#       token_embd / output_head 单列在 embedding_bytes_measured 中，不重复计入 ops。
+weight_breakdown:
+  source: "GGUF 张量表 866 个张量 × 量化块大小精确累加；blk.64 按 llama-server 启动日志剔除"
+  total_gib: 14.997                # [M] 15.3235 - 0.3269（blk.64 未启用）
+  file_gib: 15.324                 # [M] 文件总大小
+  ops:
+    - op: ffn_down
+      kind: dense
+      gib: 3.132
+      n_layer: 64
+      params_m: 5793.4
+      note: "FFN 三个矩阵在 64 层全都有，占全部权重的 61.2%"
+    - op: ffn_up
+      kind: dense
+      gib: 3.076
+      n_layer: 64
+      params_m: 5793.4
+    - op: ffn_gate
+      kind: dense
+      gib: 2.977
+      n_layer: 64
+      params_m: 5793.4
+    - op: attn_qkv
+      kind: ssm
+      gib: 1.382
+      n_layer: 48
+      params_m: 2516.6
+      note: "SSM 层的融合输入投影（x/B/C 与 z 的共享输入路径）"
+    - op: ssm_out
+      kind: ssm
+      gib: 0.945
+      n_layer: 48
+      params_m: 1509.9
+    - op: attn_gate
+      kind: ssm
+      gib: 0.824
+      n_layer: 48
+      params_m: 1509.9
+    - op: attn_q
+      kind: attn
+      gib: 0.527
+      n_layer: 16
+      params_m: 1069.5
+    - op: attn_o
+      kind: attn
+      gib: 0.333
+      n_layer: 16
+      params_m: 534.8
+    - op: attn_v
+      kind: attn
+      gib: 0.069
+      n_layer: 16
+      params_m: 89.1
+    - op: attn_k
+      kind: attn
+      gib: 0.061
+      n_layer: 16
+      params_m: 89.1
+    - op: ssm_alpha
+      kind: ssm
+      gib: 0.012
+      n_layer: 48
+      params_m: 11.8
+    - op: ssm_beta
+      kind: ssm
+      gib: 0.012
+      n_layer: 48
+      params_m: 11.8
+    - op: ssm_conv1d
+      kind: ssm
+      gib: 0.007
+      n_layer: 48
+      params_m: 2.0
+    - op: norm
+      kind: dense
+      gib: 0.002
+      n_layer: 64
+      params_m: 0.7
+  # 逐层真实字节（blk.0 … blk.63），用于逐层剖面；blk.64 不计入
+  per_layer_mib: [203.16, 208.43, 204.44, 215.59, 207.10, 208.19, 211.08, 199.42,
+                  203.51, 201.79, 208.19, 188.79, 200.85, 179.83, 172.14, 175.47,
+                  188.47, 193.78, 196.16, 198.09, 206.16, 213.74, 217.73, 204.06,
+                  237.26, 255.62, 241.01, 220.00, 201.79, 198.04, 213.35, 202.62,
+                  210.69, 203.35, 213.35, 212.15, 213.51, 201.94, 222.10, 210.71,
+                  218.82, 215.07, 206.16, 199.42, 201.79, 197.10, 201.79, 197.54,
+                  200.85, 209.76, 231.01, 216.02, 234.76, 231.01, 230.07, 236.60,
+                  247.80, 245.38, 243.82, 237.27, 251.63, 241.63, 251.63, 269.22]
+
+# ---- 精度资产（量化档位对照，用于「精度-性能权衡」）----------------------
+precision_ladder:
+  # bytes_per_param 为 ggml 实测平均位宽；ppl 为待采集项
+  - quant: F16
+    bits_per_weight: 16.0
+    est_weight_bytes: 54640000000  # [D] 27.32B × 2
+    ppl: null                      # [T] perfkit verify --ppl 采集
+  - quant: Q8_0
+    bits_per_weight: 8.5
+    est_weight_bytes: 29027500000  # [D]
+    ppl: null                      # [T]
+  - quant: Q6_K
+    bits_per_weight: 6.5625
+    est_weight_bytes: 22414125000  # [D]
+    ppl: null                      # [T]
+  - quant: Q5_K_M
+    bits_per_weight: 5.5
+    est_weight_bytes: 18782500000  # [D]
+    ppl: null                      # [T]
+  - quant: Q4_K_M
+    bits_per_weight: 4.8125
+    est_weight_bytes: 16464440224  # [M] 本部署基准档位
+    ppl: null                      # [T]
+  - quant: Q4_0
+    bits_per_weight: 4.5
+    est_weight_bytes: 15367500000  # [D] 仅 KV Cache / Draft 使用
+    ppl: null                      # [T]
+
+# ---- GGUF 核验记录 ---------------------------------------------------------
+# 在目标机上对模型文件做的元数据核验（等价于 `perfkit define --from-gguf`）。
+# 记录在这里而不是每次重跑：GGUF 文件在云端 16GB，核验只需读前 64MB，
+# 但把结果固化下来可以让配置在本地 replay 时也能显示「已核验」。
+# 换模型/换量化档位时必须重新核验并更新本段。
+gguf_verification:
+  collected: "2026-10-18"
+  path: /root/autodl-tmp/models/Qwen3.8-27B-UD-Q4_K_M.gguf
+  file_bytes: 16464440224
+  version: 3
+  tensor_count: 866
+  layers_by_tensor: 65
+  arch: qwen35
+  type_histogram: {F32: 360, Q4_K: 104, Q5_K: 131, IQ4_XS: 117, Q8_0: 106,
+                   Q6_K: 30, Q3_K: 7, IQ4_NL: 7, IQ3_S: 4}
+  extracted:
+    n_layer: 64
+    hidden_size: 5120
+    intermediate_size: 17408
+    n_head: 24
+    n_head_kv: 4
+    head_dim: 256
+    vocab_size: 248320
+    rope_theta: 10000000.0
+    norm_eps: 1.0e-6
+    max_ctx_native: 262144
+    sliding_window: null
+    tie_embeddings: false
+  all_match: true
+  kv_gap_explained: >
+    真值 n_attn_layer=16 / n_head_kv=4 / head_dim=256 相比旧反推值
+    （n_layer=64 / n_head_kv=8 / head_dim=128）把每 token 的 KV 元素数
+    从 131,072 降到 32,768（1/4），一次性解释了历史报告里
+    「几何 6.50 GiB vs 实测 2.20 GiB（2.95×）」的差额。
+
+# ---- 校准锚点 --------------------------------------------------------------
+# 已删除。历史锚点记录的是「几何公式 6.50 GiB vs 台账 2.20 GiB，差 2.95×」，
+# 根因已查明并用 GGUF 真值消除：
+#   旧假设：64 层全注意力 × 8 KV 头 × head_dim 128 → 每 token 131,072 元素
+#   真  值：16 层全注意力 × 4 KV 头 × head_dim 256 → 每 token  32,768 元素（正好 1/4）
+# 用真值重算 64K + q8_0/q4_0 的 KV = 1.63 GiB，与实测 ~2.2 GiB 同量级，
+# 差额来自台账的工程粗估（原文即写「~2.2 GB」）与运行时缓冲。

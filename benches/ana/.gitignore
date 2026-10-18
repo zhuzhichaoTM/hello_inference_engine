@@ -1,0 +1,33 @@
+# 构建产物
+build/
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 运行产物（每次跑闭环都会重新生成，不入库）
+output/
+
+# 技能打包产物（由 make skills 生成）
+skills/dist/
+
+# 编辑器 / 系统
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# 大文件（模型权重、原始日志）走 Releases 或本地保存
+*.gguf
+*.ggml
+*.safetensors
+*.bin
+raw/

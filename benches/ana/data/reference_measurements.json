@@ -1,0 +1,348 @@
+{
+  "$comment": "======================================================================",
+  "_note_1": "参考测量台账（Measurement Ledger）—— 所有 [M] 实测数据的唯一来源。",
+  "_note_2": "每条记录都带 source（文档章节）与复现命令，符合写作规范第 2 条",
+  "_note_3": "「所有吞吐/延迟/显存数字必须附硬件/驱动/框架/模型版本/复现命令」。",
+  "_note_4": "切换到新模型/新硬件时，替换本文件即可让 replay 模式跑通，无需改代码。",
+  "_note_5": "scenarios 按 task_*.yaml 的 scenario id 组织 —— 换任务只改两边配置。",
+  "meta": {
+    "model": "Qwen3.8-27B",
+    "quant": "Q4_K_M (unsloth UD)",
+    "engine": "llama.cpp 4ff829e (CUDA sm_89, Release)",
+    "device": "NVIDIA GeForce RTX 4090 24GB GDDR6X",
+    "driver": "580.76.05",
+    "cuda": "12.8",
+    "os": "Linux",
+    "collected": "2026-10-13",
+    "source_doc": "hello_inference_engine/deploy/Qwen3.8-27B/Qwen3.8-27B部署方案与实战报告.md",
+    "collected_load_avg": "不适用（独立显存带宽，不受主机负载影响）"
+  },
+  "theoretical": {
+    "vram_bandwidth_gbps": 1008,
+    "weight_gib": 15.33,
+    "decode_tps_upper_bound": 61.4,
+    "decode_tps_upper_bound_formula": "1008 GB/s ÷ 16.46 GB（十进制 GB）",
+    "confidence": "derived"
+  },
+  "baseline_native": {
+    "config": "纯自回归，无投机解码，-ngl 99, Q4_K_M",
+    "decode_tps": 50.47,
+    "bandwidth_utilization": 0.822,
+    "source": "报告 §1.1 / §3.1",
+    "confidence": "measured"
+  },
+  "scenarios": {
+    "short_chat": {
+      "prompt_tokens": 90,
+      "gen_tokens": 256,
+      "parallel": 1,
+      "prefill_tps": 85.49,
+      "prefill_seconds": 1.05,
+      "decode_tps": 47.94,
+      "decode_seconds": 5.34,
+      "ttft_ms": 1050.0,
+      "e2e_seconds": 6.15,
+      "e2e_tokens": 346,
+      "source": "报告 §4.1（2 并发 64K 生产配置下的单会话独立请求）",
+      "confidence": "measured",
+      "command": "curl -s http://127.0.0.1:8000/v1/chat/completions -H \"Content-Type: application/json\" -d \\\n  '{\"model\":\"qwen3.8-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"<prompt 长度 90 tokens>\"}],\"temperature\":0.1,\"max_tokens\":256}'",
+      "command_source": "reconstructed"
+    },
+    "long_ctx": {
+      "prompt_tokens": 32768,
+      "gen_tokens": 256,
+      "parallel": 1,
+      "prefill_tps": 85.5,
+      "decode_tps": 43.5,
+      "kv_cache_gib": 1.1,
+      "source": "报告 §4.4（单槽 32K 满载）",
+      "confidence": "measured",
+      "caveat": "§4.4 的 Prefill 速率与 §4.1 的 90-token 短 prompt 值同量级（85.5 vs 85.49），却与 §3.1 的 2900 t/s 差 34×；口径存疑，推得的 TTFT 仅作异常提示",
+      "command": "curl -s http://127.0.0.1:8000/v1/chat/completions -H \"Content-Type: application/json\" -d \\\n  '{\"model\":\"qwen3.8-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"<prompt 长度 32768 tokens>\"}],\"temperature\":0.1,\"max_tokens\":256}'",
+      "command_source": "reconstructed"
+    },
+    "long_gen": {
+      "prompt_tokens": 512,
+      "gen_tokens": 2048,
+      "parallel": 1,
+      "decode_tps": 43.6,
+      "source": "报告 §4.6（深度推理模式，temperature=0.6, top_p=0.95, max_tokens=2048）",
+      "confidence": "measured",
+      "command": "curl -s http://127.0.0.1:8000/v1/chat/completions -H \"Content-Type: application/json\" -d \\\n  '{\"model\":\"qwen3.8-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"<prompt 长度 512 tokens>\"}],\"temperature\":0.6,\"max_tokens\":2048}'",
+      "command_source": "reconstructed"
+    },
+    "concurrent_2": {
+      "prompt_tokens": 256,
+      "gen_tokens": 160,
+      "parallel": 2,
+      "decode_tps": 43.57,
+      "decode_tps_system": 64.74,
+      "per_slot_tps": [
+        43.57,
+        43.56
+      ],
+      "wall_seconds": 4.94,
+      "total_tokens": 320,
+      "source": "报告 §4.2（两路满载独立生成，耗时完全一致 4.94s）",
+      "confidence": "measured",
+      "command": "# 两路并发：用线程池同时发起两个独立请求，记录墙钟时间\npython3 -c \"import concurrent.futures as f; ...\"  # 见报告 §4.2 的客户端实现；或 curl 两次并用 & 并行",
+      "command_source": "reconstructed"
+    },
+    "soak_30min": {
+      "status": "todo",
+      "note": "云端未做 30 分钟持续负载压测，热稳态与泄漏需现场补采",
+      "thermal_ref": {
+        "gpu_temp_c_range": [
+          29,
+          32
+        ],
+        "fan_pct": 30
+      }
+    },
+    "multi_turn": {
+      "status": "todo",
+      "note": "多轮对话场景未单独采集；Prefix Cache 收益需专门设计实验（同 session 累积上下文）"
+    }
+  },
+  "curves": {
+    "long_context": [
+      {
+        "ctx": 4096,
+        "prefill_tps": 105.3,
+        "decode_tps": 46.8,
+        "kv_gib": 0.15,
+        "command": "curl -s http://127.0.0.1:8000/v1/chat/completions -H \"Content-Type: application/json\" -d \\\n  '{\"model\":\"qwen3.8-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"<prompt 长度 512 tokens>\"}],\"temperature\":0.1,\"max_tokens\":64}'\n# 服务端 --ctx-size 65536，测量时单槽已填充至 4096 tokens",
+        "command_source": "reconstructed",
+        "kv_gib_source": "measured",
+        "prompt_tokens": 512,
+        "gen_tokens": 64
+      },
+      {
+        "ctx": 16384,
+        "prefill_tps": 95.2,
+        "decode_tps": 44.5,
+        "kv_gib": 0.6,
+        "command": "curl -s http://127.0.0.1:8000/v1/chat/completions -H \"Content-Type: application/json\" -d \\\n  '{\"model\":\"qwen3.8-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"<prompt 长度 512 tokens>\"}],\"temperature\":0.1,\"max_tokens\":64}'\n# 服务端 --ctx-size 65536，测量时单槽已填充至 16384 tokens",
+        "command_source": "reconstructed",
+        "kv_gib_source": "measured",
+        "prompt_tokens": 512,
+        "gen_tokens": 64
+      },
+      {
+        "ctx": 32768,
+        "prefill_tps": 85.5,
+        "decode_tps": 43.5,
+        "kv_gib": 1.1,
+        "command": "curl -s http://127.0.0.1:8000/v1/chat/completions -H \"Content-Type: application/json\" -d \\\n  '{\"model\":\"qwen3.8-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"<prompt 长度 512 tokens>\"}],\"temperature\":0.1,\"max_tokens\":64}'\n# 服务端 --ctx-size 65536，测量时单槽已填充至 32768 tokens",
+        "command_source": "reconstructed",
+        "kv_gib_source": "measured",
+        "prompt_tokens": 512,
+        "gen_tokens": 64
+      },
+      {
+        "ctx": 65536,
+        "prefill_tps": 72.3,
+        "decode_tps": 43.5,
+        "kv_gib": 2.2,
+        "note": "双槽全满载",
+        "command": "curl -s http://127.0.0.1:8000/v1/chat/completions -H \"Content-Type: application/json\" -d \\\n  '{\"model\":\"qwen3.8-27b\",\"messages\":[{\"role\":\"user\",\"content\":\"<prompt 长度 512 tokens>\"}],\"temperature\":0.1,\"max_tokens\":64}'\n# 服务端 --ctx-size 65536，测量时单槽已填充至 65536 tokens",
+        "command_source": "reconstructed",
+        "kv_gib_source": "measured",
+        "prompt_tokens": 512,
+        "gen_tokens": 64
+      }
+    ]
+  },
+  "memory": {
+    "config": "--parallel 2 --ctx-size 65536 --cache-type-k q8_0 --cache-type-v q4_0 --mmproj",
+    "breakdown_gib": {
+      "main_weight": 15.33,
+      "mmproj": 0.86,
+      "kv_cache": 2.2,
+      "runtime_buffer": 0.2
+    },
+    "peak_used_mib": 18625,
+    "vram_total_mib": 24564,
+    "safety_margin_mib": 5939,
+    "utilization_ratio": 0.758,
+    "source": "报告 §1.2 / §4.5",
+    "confidence": "measured"
+  },
+  "extra": {
+    "spec_mtp": {
+      "config": "-md mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp -ngld 99 --parallel 1",
+      "decode_tps_range": [
+        80.8,
+        104.5
+      ],
+      "decode_tps_typical": 92.0,
+      "speedup_vs_native": 1.645,
+      "ttft_ms_max": 120,
+      "accept_rate_samples": [
+        0.39,
+        0.514
+      ],
+      "source": "报告 §3.1 / §5.1 / §5.2",
+      "confidence": "measured"
+    },
+    "prefill_flash_attn": {
+      "config": "--flash-attn on",
+      "prefill_tps": 2900,
+      "source": "报告 §3.1",
+      "confidence": "measured",
+      "caveat": "未标注 prompt 长度与并发配置；与 §4.4 的 85.5 t/s 差 33.9×，须用 live 模式重测消除歧义"
+    },
+    "multimodal": {
+      "config": "--mmproj mmproj-F16.gguf",
+      "vision_prefill_ms": 457.55,
+      "mmproj_gib": 0.86,
+      "source": "报告 §4.3",
+      "confidence": "measured"
+    },
+    "tunnel": {
+      "ssh_forward_tps": 86.27,
+      "cloudflare_tps": 79.82,
+      "source": "报告 §5.1 / §5.2",
+      "confidence": "measured"
+    },
+    "mode_switch": {
+      "fast": {
+        "ttft_s_max": 1.0,
+        "decode_tps": 47.9,
+        "params": "temperature=0.1, max_tokens=128"
+      },
+      "deep": {
+        "decode_tps": 43.6,
+        "params": "temperature=0.6, top_p=0.95, max_tokens=2048"
+      },
+      "source": "报告 §4.6",
+      "confidence": "measured"
+    },
+    "op_breakdown_model": {
+      "$comment": "逐算子耗时按「权重字节占比 × 实测单步耗时」推导（derived 模型，非实测）。",
+      "_calibrate": "总步长 = 实测 decode ms/token；各 op 按权重字节线性分摊。",
+      "_replace_by": "perfkit profiling --live（nsys / llama.cpp 内置计时）",
+      "per_layer_param_shares": {
+        "attn_q": 0.0968,
+        "attn_k": 0.0161,
+        "attn_v": 0.0161,
+        "attn_o": 0.0968,
+        "ffn_gate": 0.2581,
+        "ffn_up": 0.2581,
+        "ffn_down": 0.2581,
+        "norm_other": 0.0
+      },
+      "source": "按 model_qwen3.8-27b.yaml 的 architecture 推导",
+      "confidence": "derived"
+    },
+    "thermal": {
+      "gpu_temp_c_range": [
+        29,
+        32
+      ],
+      "fan_pct": 30,
+      "note": "云端机箱散热充足，未观测到降频；端侧需补做持续负载稳态测试",
+      "source": "部署报告 §4.5",
+      "confidence": "measured"
+    },
+    "power": {
+      "value_w": null,
+      "note": "未采集 —— 需 nvidia-smi --query-gpu=power.draw 持续采样",
+      "confidence": "todo"
+    }
+  },
+  "measurement_protocol": {
+    "tool": "llama-server + HTTP 客户端（Python 线程池 / curl）",
+    "tool_version": "llama.cpp 4ff829e（CUDA sm_89, Release）",
+    "statistic": "每个场景取代表值（单流为多次请求的稳定读数；并发场景为两路同时发起的墙钟测量）",
+    "measurement_point": "**端到端墙钟**：从 HTTP 请求发出到响应完成，含传输、排队、Tokenize、Prefill、采样",
+    "backend": "gpu",
+    "backend_label": "NVIDIA 独显",
+    "accel_flags": [
+      "-ngl",
+      "99"
+    ],
+    "flags": [
+      {
+        "flag": "prompt_tokens",
+        "meaning": "请求体构造的输入长度；由客户端脚本决定，不是服务端参数"
+      },
+      {
+        "flag": "max_tokens",
+        "meaning": "请求体中的生成长度上限"
+      },
+      {
+        "flag": "temperature / top_p",
+        "meaning": "采样参数。**必须随数据记录** —— 它直接影响投机解码接受率（§5.2 中温度 0.1 与 0.6 的接受率相差明显）"
+      },
+      {
+        "flag": "--parallel N",
+        "meaning": "服务端槽位数。并发场景下各槽位共享同一次权重读取，因此系统吞吐 > 单流吞吐"
+      },
+      {
+        "flag": "--ctx-size N",
+        "meaning": "服务端总上下文；单槽上下文 = 总上下文 ÷ 槽位数"
+      }
+    ],
+    "conventions": [
+      "本批为**端到端口径**（HTTP 往返），与 llama-bench 的**纯解码口径**不同：端到端口径含采样、排队与传输开销，因此绝对值低于同配置的 llama-bench 读数。两套口径不可混用。",
+      "并发场景：系统吞吐 = 各槽位产出 token 之和 ÷ 墙钟时间；人均速率 = 单槽产出 ÷ 墙钟时间。",
+      "长上下文曲线的每一点都在**单槽满载**状态下测得（另一槽位空闲），避免并发干扰深度归因。",
+      "所有数据在同一进程（PID 3420）、同一构建、同一权重文件下连续采集；服务未重启。"
+    ]
+  },
+  "environment_verification": {
+    "collected": "2026-10-13",
+    "activities": [
+      {
+        "activity": "设备连接",
+        "status": "pass",
+        "evidence": "云端实例，经 SSH 隧道（-L 8000:127.0.0.1:8000）访问；本地 curl /v1/models 返回 qwen3.8-27b"
+      },
+      {
+        "activity": "SDK / 驱动安装",
+        "status": "pass",
+        "evidence": "Driver 580.76.05 + CUDA 12.8；nvcc 在 /usr/local/cuda/bin"
+      },
+      {
+        "activity": "Runtime 部署",
+        "status": "pass",
+        "evidence": "llama.cpp Release build 4ff829e，build/bin 下 llama-server / llama-bench / llama-cli 可用"
+      },
+      {
+        "activity": "编译环境配置",
+        "status": "pass",
+        "evidence": "cmake -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89（sm_89 与 CC 8.9 匹配）"
+      },
+      {
+        "activity": "模型加载验证",
+        "status": "pass",
+        "evidence": "llama-server 启动后 /v1/models 返回 qwen3.8-27b；显存占用 18,625 MiB / 24,564 MiB"
+      },
+      {
+        "activity": "Demo 运行验证",
+        "status": "pass",
+        "evidence": "单轮对话（含思维链）正常返回；图文多模态请求正确识别图片背景色为红色"
+      }
+    ],
+    "model_load": {
+      "peak_rss_mib": 18625,
+      "vram_total_mib": 24564,
+      "command": "./llama-server -m $MODEL --mmproj $MMPROJ -ngl 99 --parallel 2 --ctx-size 65536 --cache-type-k q8_0 --cache-type-v q4_0 --flash-attn on"
+    },
+    "demo_run": {
+      "prompt": "请直接回答：这幅图片的背景纯色是红色、蓝色还是绿色？",
+      "output": "红色",
+      "prompt_tps": 85.49,
+      "gen_tps": 47.94,
+      "wall_seconds": 6.15,
+      "command": "curl -s http://127.0.0.1:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{...}'"
+    },
+    "verdict": {
+      "environment_correct": true,
+      "model_loads_stably": true,
+      "no_fallback": true,
+      "note": "环境验证通过：模型稳定加载、全层 GPU 卸载无 CPU 回退、图文与长上下文场景均正常返回。峰值显存 18,625 MiB，冗余 5.94 GiB。"
+    }
+  }
+}

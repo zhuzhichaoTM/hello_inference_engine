@@ -1,0 +1,63 @@
+device:
+  name: Intel Core i7-4770HQ (MacBook Pro)
+  vendor: Intel
+  kind: cpu
+  arch: x86_64 Haswell
+  form_factor: laptop
+memory:
+  vram_total_mib: 16384   # 物理内存 16 GiB（实测 sysctl hw.memsize）
+  mem_type: DDR3L-1600
+  mem_bandwidth_gbps_peak: 25.6
+  unified_memory: true
+  l2_cache_mib: 1
+  l3_cache_mib: 6
+compute:
+  cpu_arch: x86_64
+  cpu_cores: 4
+  logical_cores: 8
+  simd: [SSE4.2, AVX, FMA, F16C, AVX2]
+  fp32_tflops_peak: 0.14
+  fp16_tflops_peak: 0.28
+  simd_flops_per_core_cycle: 16
+  cpu_ghz: 2.2
+power_thermal:
+  tdp_w: 47
+  thermal_throttle: true
+  battery: true
+software:
+  os: macOS 14.6.1
+  driver: null
+  engine: llama.cpp
+  engine_commit: 07d937828
+  engine_backend: CPU (Accelerate + AVX2 + FMA)
+  compiler: AppleClang 16
+  toolchain: "-O3 -mavx2 -mfma"
+  # 编译配置（业务地图 0 环境准备的输出物之一）：
+  # 完整可复现的构建命令。架构标志写错会静默退化，必须留档。
+  build_command: >
+    cmake -B build -DGGML_METAL=OFF -DCMAKE_BUILD_TYPE=Release
+    -DGGML_NATIVE=ON && cmake --build build --config Release -j4
+  build_note: >
+    GGML_NATIVE=ON 让编译器按本机 CPU 自动选择指令集（本机为 Haswell：
+    AVX2 + FMA + F16C）；GGML_METAL=OFF 显式关闭 Metal，
+    避免在装了核显的机器上静默走 GPU。
+  runtime_deploy: >
+    llama.cpp/build/bin 下的 llama-cli / llama-bench / llama-server 可直接执行，
+    无动态库依赖，无需额外部署步骤。
+  sdk: "无（CPU 后端不需要 SDK；GPU 后端需要 CUDA Toolkit，NPU 需要厂商工具链）"
+constraints:
+  max_vram_gib: 15.0   # 16 GiB 物理内存 − 1 GiB 系统余量
+  min_safety_margin_gib: 1.0
+  host_device_transport_gbps: 25.6
+
+# ---- 测量有效性条件 --------------------------------------------------------
+# CPU 后端共享内存带宽与物理核，测量结果对**机器空闲度**高度敏感。
+# 本次数据采集窗口 load average < 2；之后外部负载上升到 90+ 时复测，
+# 同一配置的 Decode 从 17.85 t/s 掉到 9.19 t/s（-49%）。
+# 因此本设备的所有性能数字都必须连同当时的系统负载一起报告。
+measurement_validity:  # 见 docs/usage.md §8「CPU 后端的测量有效性」
+  require: "uptime 的 1 分钟负载 < 物理核数（4）"
+  sensitivity: "负载 90+ 时吞吐下降约 50%"
+  contrast: >
+    独显后端有独立显存带宽，不受主机负载影响 —— 这是 CPU 与 GPU 的本质差异，
+    报告与诊断中必须区分。

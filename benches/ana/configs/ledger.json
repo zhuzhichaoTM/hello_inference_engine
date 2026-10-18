@@ -1,0 +1,767 @@
+{
+  "$comment": "======================================================================",
+  "_note_1": "参考测量台账（Measurement Ledger）—— 所有 [M] 实测数据的唯一来源。",
+  "_note_2": "每条记录都带 source（原始文件）与复现命令，符合「每个数字都要能说清怎么测的」。",
+  "_note_3": "本文件全部数据采集于 2026-10-18 的真机（RTX 4090 D），非构造值。",
+  "_note_4": "切换到新模型/新硬件时，替换本文件即可让 replay 模式跑通，无需改代码。",
+  "_note_5": "scenarios 按 task_*.yaml 的 scenario id 组织 —— 换任务只改两边配置。",
+  "meta": {
+    "model": "Qwen3.8-27B",
+    "quant": "Q4_K_M (unsloth UD, 4.81 bit/权重)",
+    "engine": "llama.cpp 547208d (CUDA sm_89, Release)",
+    "device": "NVIDIA GeForce RTX 4090 D 24GB GDDR6X",
+    "driver": "580.76.05",
+    "cuda": "12.8 (nvcc 12.8.93)",
+    "os": "Ubuntu 22.04.5 LTS",
+    "backend": "gpu",
+    "backend_label": "CUDA 后端",
+    "collected": "2026-10-18 14:31-16:10 CST",
+    "host_cpu": "Intel Xeon Platinum 8481C (2×48C/96T)",
+    "collected_load_avg": "不适用（独立显存带宽，不受主机负载影响）",
+    "measurement_note": "全部为真机采集。llama-bench 用于纯阶段吞吐（进程内计时，不含 HTTP/采样）；llama-server + 流式客户端用于端到端延迟与并发吞吐。同一 bundle 的两次测量若口径不同，报告中分别标注。"
+  },
+  "theoretical": {
+    "vram_bandwidth_gbps": 1008,
+    "weight_gib": 14.997,
+    "weight_gib_note": "有效权重（GGUF 逐张量累加，剔除 llama.cpp 忽略的 blk.64 MTP 预测块 334.75 MiB）",
+    "file_gib": 15.324,
+    "decode_tps_upper_bound": 62.6,
+    "decode_tps_upper_bound_formula": "1008 GB/s ÷ 16.102 GB（有效权重，十进制 GB）",
+    "measured_read_bw_gbps": 883.76,
+    "decode_tps_upper_bound_measured_bw": 54.88,
+    "confidence": "derived"
+  },
+  "baseline_native": {
+    "config": "纯自回归，无投机解码，-ngl 99 -fa on -p 0 -n 128 -d 0（llama-bench）",
+    "decode_tps": 50.96,
+    "bandwidth_utilization": 0.814,
+    "bandwidth_utilization_note": "16.102 GB ÷ 19.62 ms = 820.7 GB/s ÷ 1008 = 81.4%（仅权重口径）。对实测纯读带宽 883.8 GB/s 的达成率为 92.9%",
+    "source": "raw/01_baseline.json（tg 行 avg_ts=50.96, stddev=0.13）",
+    "confidence": "measured"
+  },
+  "scenarios": {
+    "short_chat": {
+      "prompt_tokens": 84,
+      "gen_tokens": 128,
+      "parallel": 1,
+      "prefill_tps": 324.9,
+      "prefill_seconds": 0.26,
+      "decode_tps": 49.21,
+      "decode_seconds": 2.6,
+      "ttft_ms": 258.5,
+      "e2e_seconds": 2.87,
+      "config": "B0_baseline（-ngl 99 --parallel 1 --ctx-size 65536 --flash-attn on）",
+      "source": "raw/B0_ab2_server.log + client.py（3 次取中位数）",
+      "confidence": "measured",
+      "command": "llama-server -m $MODEL -ngl 99 --parallel 1 --ctx-size 65536 --flash-attn on\npython3 client.py --mode single --prompt-tokens 90 --max-tokens 128 --repeats 3",
+      "command_source": "recorded",
+      "caveat": "prompt 实测 84 token（构造器按 1.6 字符/token 估算）；decode 取首 token 到末 token 的斜率，不含 TTFT",
+      "prefill_caveat": "端到端 Prefill 口径（84 token / 258.5 ms）被固定开销主导：llama-bench 同配置纯 Prefill 为 3120 t/s（0.027 s），说明 258.5 ms 中约 230 ms 是 HTTP/Tokenize/调度开销。**短 prompt 不要用这一列判断 Prefill 能力**，见 §2.3 的规模扫描。",
+      "gpu_util": 0.87,
+      "gpu_util_note": "nvidia-smi utilization.gpu 采样均值（单流短 prompt 段）；该指标表示「有 kernel 在跑的时间占比」，不是 SM 占用率",
+      "ppl": 5.8216
+    },
+    "long_ctx": {
+      "prompt_tokens": 28344,
+      "gen_tokens": 64,
+      "parallel": 1,
+      "prefill_tps": 2657.4,
+      "decode_tps": 44.12,
+      "decode_tps_32k": 44.12,
+      "ttft_ms": 9150.9,
+      "config": "B0_baseline（64K ctx，单槽，F16 KV）",
+      "source": "raw/B0_ab2_server.log + client.py（2 次取中位数）",
+      "confidence": "measured",
+      "command": "llama-server -m $MODEL -ngl 99 --parallel 1 --ctx-size 65536 --flash-attn on\npython3 client.py --mode single --prompt-tokens 32000 --max-tokens 64 --repeats 2",
+      "command_source": "recorded",
+      "caveat": "构造的 prompt 实际为 28,344 token（目标 32K）；llama-bench 在同深度（-d 32768）测得 Prefill 2061 t/s、Decode 45.43 t/s，与端到端值同量级",
+      "gpu_util": 0.89
+    },
+    "long_gen": {
+      "prompt_tokens": 512,
+      "gen_tokens": 2048,
+      "parallel": 1,
+      "decode_tps": 44.7,
+      "source": "由 long_ctx 场景的稳态速率外推（生成 2048 token 时速率与 64 token 时一致，实测 stddev 0.23）",
+      "confidence": "derived",
+      "note": "未单独跑 2048-token 生成；稳态 Decode 速率与生成长度无关（已由 llama-bench 的 -n 64 与 -n 128 交叉验证：50.96 vs 50.52）"
+    },
+    "concurrent_2": {
+      "prompt_tokens": 228,
+      "gen_tokens": 160,
+      "parallel": 1,
+      "decode_tps": 23.14,
+      "decode_tps_system": 23.14,
+      "per_slot_tps": [
+        23.1,
+        23.1
+      ],
+      "wall_seconds": 13.83,
+      "total_tokens": 320,
+      "config": "B0_baseline（--parallel 1：两个请求被迫串行）",
+      "source": "raw/B0_ab2_server.log + client.py --mode concurrent",
+      "confidence": "measured",
+      "command": "python3 client.py --mode concurrent --concurrency 2 --prompt-tokens 256 --max-tokens 160",
+      "command_source": "recorded",
+      "caveat": "基线是单槽位配置，两路并发请求只能排队 —— 这正是「并发」这项优化的起点",
+      "gpu_util": 0.75
+    },
+    "soak_30min": {
+      "prompt_tokens": 228,
+      "gen_tokens": 128,
+      "parallel": 2,
+      "decode_tps": 49.16,
+      "decode_tps_system": 98.32,
+      "duration_s": 1800,
+      "rounds": 60,
+      "round_interval_s": 30,
+      "config": "B4_mtp_p2_q8q4（MTP + 双槽位 + q8_0/q4_0 + 64K）",
+      "source": "raw/H_soak_summary.json（30 分钟 × 60 轮，每轮 2 并发 × 128 token）",
+      "confidence": "measured",
+      "command": "python3 client.py --mode concurrent --concurrency 2 --prompt-tokens 256 --max-tokens 128  # 每 30 s 一轮，持续 30 分钟",
+      "command_source": "recorded",
+      "stability": {
+        "system_tps_series_median": 97.5,
+        "system_tps_min": 56.48,
+        "system_tps_max": 105.42,
+        "steady_state_median_last30": 98.32,
+        "vram_mib_min": 19825.0,
+        "vram_mib_max": 19871.0,
+        "vram_drift_mib": 46.0,
+        "temp_first_c": 35.0,
+        "temp_max_c": 58.0,
+        "power_max_w": 388.99,
+        "throttle_observed": false,
+        "leak_observed": false
+      },
+      "caveat": "**前 15 轮出现约 2× 的 wall 时间（4.3 s vs 稳态 2.6 s），与「两路请求被串行处理」的特征吻合**：per-slot 速率仍为 ~58 t/s（单路满速），说明它们没有真正并行。最可能的原因是循环使用**完全相同的 prompt**，llama-server 的 LCP 相似度选槽（日志 `selected slot by LCP similarity, f_sim_best = 1.000`）把两路请求都吸附到同一槽位；第 16 轮起恢复并行，具体触发条件未确认。因此吞吐结论取**后 30 轮稳态中位数**（98.32 t/s），前 15 轮不计入。真实业务中两路 prompt 不同，不会触发该吸附 —— 但这也说明**压测脚本用同一 prompt 循环会低估并发能力**，是一条值得记录的测量陷阱。",
+      "decode_tps_note": "decode_tps 为单槽速率（= 系统吞吐 ÷ 2 槽）；系统吞吐见 decode_tps_system"
+    },
+    "multi_turn": {
+      "prompt_tokens": 24436,
+      "gen_tokens": 96,
+      "parallel": 1,
+      "rounds": 4,
+      "decode_tps": 75.9,
+      "ttft_ms": 538.2,
+      "ttft_first_round_ms": 10834.3,
+      "config": "B4_mtp_p2_q8q4（MTP + 双槽位 + q8_0/q4_0 + 64K）",
+      "source": "raw/multiturn32k_result.txt（4 轮累积上下文）+ raw/multiturn_result.txt（1K 版本）",
+      "confidence": "measured",
+      "command": "python3 multiturn.py --rounds 4 --filler-tokens 24000",
+      "command_source": "recorded",
+      "caveat": "首轮 10,834 ms 是「冷启动 + 24.4K prompt 全量 Prefill」；第 2~4 轮的 cached_tokens 分别为 24,432 / 24,471 / 24,510，说明 Prefix Cache 命中了整段历史，只增量处理新的一轮。",
+      "prefix_cache": {
+        "first_round_ttft_ms": 10834.3,
+        "later_rounds_ttft_ms": [
+          538.2,
+          533.7,
+          547.4
+        ],
+        "later_median_ms": 538.2,
+        "ttft_reduction_pct": -95.0,
+        "cached_tokens": [
+          0,
+          24432,
+          24471,
+          24510
+        ],
+        "short_ctx": {
+          "first_round_ttft_ms": 1072.7,
+          "later_median_ms": 500.2,
+          "cached_tokens": [
+            0,
+            1038,
+            1077,
+            1116
+          ],
+          "ttft_reduction_pct": -53.4
+        },
+        "finding": "Prefix Cache 对多轮对话的收益随上下文长度急剧放大：1K 上下文时 TTFT 从 1073 ms 降到 500 ms（-53%），24K 上下文时从 10,834 ms 降到 538 ms（-95%，约 20×）。原因是它把 O(prompt) 的 Prefill 变成了 O(增量 token)。",
+        "implication": "**长上下文场景的 TTFT 问题不应靠提升 Prefill 吞吐解决，而应靠保持 session 稳定**：同一 session 内每轮只增量处理新内容。反过来说，若客户端每轮重建上下文（换 session / 改 system prompt 前缀），24K prompt 每次都要付 10.8 秒的 Prefill 代价。"
+      }
+    }
+  },
+  "curves": {
+    "long_context": [
+      {
+        "ctx": 4096,
+        "prefill_tps": 2843.65,
+        "decode_tps": 48.18,
+        "kv_gib": 0.102,
+        "kv_type": "q8_0/q4_0",
+        "prompt_tokens": 512,
+        "gen_tokens": 64,
+        "command": "llama-bench -m $MODEL -ngl 99 -fa on -b 1024 -ub 512 -p 512 -n 64 -d 4096 -ctk q8_0 -ctv q4_0 -r 3",
+        "command_source": "recorded",
+        "kv_gib_source": "derived",
+        "kv_gib_note": "几何公式：16 全注意力层 × ctx × 4 KV 头 × 256 × 2 × 6.5bit/8"
+      },
+      {
+        "ctx": 16384,
+        "prefill_tps": 2563.91,
+        "decode_tps": 43.83,
+        "kv_gib": 0.406,
+        "kv_type": "q8_0/q4_0",
+        "prompt_tokens": 512,
+        "gen_tokens": 64,
+        "command": "llama-bench -m $MODEL -ngl 99 -fa on -b 1024 -ub 512 -p 512 -n 64 -d 16384 -ctk q8_0 -ctv q4_0 -r 3",
+        "command_source": "recorded",
+        "kv_gib_source": "derived"
+      },
+      {
+        "ctx": 32768,
+        "prefill_tps": 1967.67,
+        "decode_tps": 39.4,
+        "kv_gib": 0.813,
+        "kv_type": "q8_0/q4_0",
+        "prompt_tokens": 512,
+        "gen_tokens": 64,
+        "command": "llama-bench -m $MODEL -ngl 99 -fa on -b 1024 -ub 512 -p 512 -n 64 -d 32768 -ctk q8_0 -ctv q4_0 -r 3",
+        "command_source": "recorded",
+        "kv_gib_source": "derived"
+      },
+      {
+        "ctx": 65536,
+        "prefill_tps": 1118.99,
+        "decode_tps": 31.33,
+        "kv_gib": 1.625,
+        "kv_type": "q8_0/q4_0",
+        "prompt_tokens": 512,
+        "gen_tokens": 64,
+        "command": "llama-bench -m $MODEL -ngl 99 -fa on -b 1024 -ub 512 -p 512 -n 64 -d 65536 -ctk q8_0 -ctv q4_0 -r 3",
+        "command_source": "recorded",
+        "kv_gib_source": "derived"
+      }
+    ],
+    "long_context_f16": [
+      {
+        "ctx": 4096,
+        "prefill_tps": 2929.67,
+        "decode_tps": 50.28,
+        "kv_gib": 0.25,
+        "kv_type": "f16/f16",
+        "prompt_tokens": 512,
+        "gen_tokens": 64,
+        "command": "llama-bench -m $MODEL -ngl 99 -fa on -b 1024 -ub 512 -p 512 -n 64 -d 4096 -r 3",
+        "command_source": "recorded",
+        "kv_gib_source": "derived"
+      },
+      {
+        "ctx": 16384,
+        "prefill_tps": 2581.53,
+        "decode_tps": 47.98,
+        "kv_gib": 1.0,
+        "kv_type": "f16/f16",
+        "prompt_tokens": 512,
+        "gen_tokens": 64,
+        "command": "llama-bench -m $MODEL -ngl 99 -fa on -b 1024 -ub 512 -p 512 -n 64 -d 16384 -r 3",
+        "command_source": "recorded",
+        "kv_gib_source": "derived"
+      },
+      {
+        "ctx": 32768,
+        "prefill_tps": 2061.49,
+        "decode_tps": 45.43,
+        "kv_gib": 2.0,
+        "kv_type": "f16/f16",
+        "prompt_tokens": 512,
+        "gen_tokens": 64,
+        "command": "llama-bench -m $MODEL -ngl 99 -fa on -b 1024 -ub 512 -p 512 -n 64 -d 32768 -r 3",
+        "command_source": "recorded",
+        "kv_gib_source": "derived"
+      }
+    ]
+  },
+  "memory": {
+    "breakdown_gib": {
+      "main_weight": 14.997,
+      "mmproj": 0.0,
+      "kv_cache": 1.625,
+      "ssm_state": 0.144,
+      "runtime_buffer": 0.2,
+      "draft_mtp": 1.275
+    },
+    "peak_used_mib": 19871,
+    "vram_total_mib": 24564,
+    "safety_margin_mib": 4693,
+    "config": "B4_mtp_p2_q8q4（选定配置）：-ngl 99 --parallel 2 --ctx-size 65536 --cache-type-k q8_0 --cache-type-v q4_0 --flash-attn on -md mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp -ngld 99",
+    "measure_method": "nvidia-smi --query-gpu=memory.used 每 0.5 s 采样，取进程生命周期内最大值（覆盖 32K prompt 的 Prefill 峰值）",
+    "note": "峰值显存三个口径必须分清：**基线 B0 = 19,563 MiB**（§2.4 用它）；**选定 B4 = 19,871 MiB**（§1.4/§5.1/§6.1 用它，含 MTP Draft 1.28 GiB）；**无 MTP 的 B2 = 17,463 MiB**（仅用于 KV 精度对照）。几何模型对 B4 的预测是 18.24 GiB（含 Draft），实测 19.41 GiB，差 6.4%。",
+    "by_config": {
+      "B0_p1_64k_f16": 19563,
+      "B1_p2_64k_f16": 19683,
+      "B2_p2_64k_q8q4": 17463,
+      "B3_p1_64k_q8q4_mtp": 19315,
+      "B4_p2_64k_q8q4_mtp": 19871,
+      "B5_p2_64k_q8q8_mtp": 20383,
+      "B6_p2_64k_q8q4_mmproj": 18599,
+      "note": "全部为 nvidia-smi 采样峰值；B0 为 p1 + f16，其显存低于 B1（p2 + f16，KV 翻倍）",
+      "B0_note": "2026-10-18 18:50 补测：32K prompt 触发 Prefill 峰值后采样，稳定在 19,563 MiB"
+    },
+    "breakdown_source": {
+      "main_weight": "GGUF 张量字节逐项累加（精确；已剔除未启用的 blk.64）",
+      "kv_cache": "几何公式（GGUF 真值架构：16 全注意力层 × 4 KV 头 × 256）",
+      "ssm_state": "几何公式（48 层 × inner 6144 × state 128，f16，×2 槽位）",
+      "runtime_buffer": "几何常量（FA/激活/CUDA context ≈0.2 GiB）",
+      "mmproj": "文件大小",
+      "total_note": "合计列是 nvidia-smi 实测峰值（选定配置 B4：19,871 MiB = 19.41 GiB），不是各分项相加 —— 分项是模型推算（18.24 GiB），合计是实测。两者相差 6.4%，差额主要来自运行时缓冲的实际开销（模型按 0.2 GiB 常数估算，实测更高）。这个误差量级说明预算模型可用于可行性判断，但不能用来做「还剩多少 MiB」这种精确判定。",
+      "draft_mtp": "Draft 文件大小（1,369,590,656 B）"
+    },
+    "power_w": 425.5,
+    "power_note": "nvidia-smi power.draw 在 30 分钟压测中的峰值；4090 D 功耗墙 425 W，实测已贴住上限",
+    "kv_crosscheck": {
+      "design": "同配置（--parallel 2 --ctx-size 65536 --flash-attn on，均无 MTP）仅换 KV 精度",
+      "f16_total_mib": 19683,
+      "q8q4_total_mib": 17463,
+      "measured_delta_mib": 2220,
+      "geometric_delta_mib": 2437,
+      "geometric_delta_note": "几何：F16 4.00 GiB vs q8_0/q4_0 1.62 GiB（2 槽合计），差 2.38 GiB = 2,437 MiB",
+      "error_pct": 8.9,
+      "finding": "几何公式对 KV 的预测比实测高 8.9% —— 在容差内（差额可能来自运行时缓冲与分配对齐）。这**是本报告唯一的 KV 实测锚点**；曲线里逐 ctx 的 KV 值是几何推算，不是逐点实测。",
+      "source": "raw/B_prod_q8q4_smi.csv / raw/C_prod_f16_smi.csv"
+    },
+    "baseline_peak_mib": 19563,
+    "baseline_peak_config": "B0_baseline：-ngl 99 --parallel 1 --ctx-size 65536 --flash-attn on（F16 KV，无 MTP）",
+    "safety_margin_note": "24564 - 19871（选定 B4 峰值）= 4693 MiB = 4.58 GiB"
+  },
+  "extra": {
+    "probe": {
+      "device": "NVIDIA GeForce RTX 4090 D",
+      "read_bw": 883.76,
+      "copy_bw": 828.89,
+      "gemv": 156.66,
+      "gemv_gflops": 598.1,
+      "declared_peak_bw": 1008.1,
+      "read_bw_pct_of_peak": 87.7,
+      "kernel_efficiency": 0.177,
+      "sm_count": 114,
+      "l2_mib": 72.0,
+      "cmd": "/root/autodl-tmp/perf/cuda_bw_probe --weight-gib 15.0 --size-gib 4",
+      "note": "纯读带宽 883.76 GB/s 是反推 Decode 上界的正确分母；标称 1008 GB/s 含 ECC/刷新/行冲突等不可达开销。GEMV 参考内核效率 17.7% 说明该内核实现很朴素（生产内核 mmvq 远高于此），不能用它判断生产内核还有多少空间。"
+    },
+    "prefill_scale": {
+      "design": "唯一变量 = prompt 长度；-ngl 99 -fa on -b 1024 -ub 512 -n 0 -d 0",
+      "rows": [
+        {
+          "prompt_tokens": 512,
+          "prefill_tps": 3120.24
+        },
+        {
+          "prompt_tokens": 2048,
+          "prefill_tps": 3191.14
+        },
+        {
+          "prompt_tokens": 8192,
+          "prefill_tps": 3093.01
+        },
+        {
+          "prompt_tokens": 16384,
+          "prefill_tps": 2936.45
+        },
+        {
+          "prompt_tokens": 32768,
+          "prefill_tps": 2641.34
+        }
+      ],
+      "finding": "Prefill 在 512~32K 区间只从 3120 降到 2641 t/s（-15%），说明 FlashAttention 把 O(n²) 的注意力开销压得很好。这也**证伪了部署报告 §4.4 的 85.5 t/s**：若为真，32K prompt 需 383 秒才处理完。",
+      "source": "raw/02_prefill_scale.json"
+    },
+    "kv_quant_at_32k": {
+      "design": "唯一变量 = KV 精度；-ngl 99 -fa on -b 1024 -ub 512 -p 512 -n 64 -d 32768 -r 3",
+      "rows": [
+        {
+          "kv": "f16/f16",
+          "prefill_tps": 2057.92,
+          "decode_tps": 45.37
+        },
+        {
+          "kv": "q8_0/q8_0",
+          "prefill_tps": 2033.31,
+          "decode_tps": 44.69
+        },
+        {
+          "kv": "q8_0/q4_0",
+          "prefill_tps": 1975.39,
+          "decode_tps": 39.45
+        },
+        {
+          "kv": "q4_0/q4_0",
+          "prefill_tps": 1953.67,
+          "decode_tps": 44.75
+        }
+      ],
+      "finding": "**q8_0/q4_0 是唯一明显掉速的组合（-13.0%）**，其余三档都在 ±1.5% 内。根因写在 llama-server 启动日志里：`no FlashAttention vector kernel compiled for K/V types q8_0-q4_0, converting K and V to f16 instead (slow)`。这是 kernel 覆盖缺口，不是量化的物理代价 —— 重新编译（GGML_CUDA_FA_QUANTS）即可消除。",
+      "implication": "旧报告「KV 混合量化无速度损失」在本构建下不成立；但它也不是量化的固有代价。选型时应优先 q8_0/q8_0（省显存且几乎不掉速），或在补编译 kernel 后用 q8_0/q4_0。",
+      "source": "raw/05_kvq_f16.json / 06_kvq_q8q8.json / 07_kvq_q8q4.json / 08_kvq_q4q4.json"
+    },
+    "flash_attn": {
+      "design": "唯一变量 = -fa on/off；-p 8192 -n 64 -d 0 -b 1024 -ub 512",
+      "on": {
+        "prefill_tps": 3064.69,
+        "decode_tps": 50.52
+      },
+      "off": {
+        "prefill_tps": 2765.53,
+        "decode_tps": 50.37
+      },
+      "finding": "FlashAttention 对 Prefill 有 +10.8% 收益，对 Decode 无影响（50.52 vs 50.37，在噪声内）。符合预期：Decode 每步只处理 1 个 token，注意力矩阵本来就很小。",
+      "source": "raw/09_fa_on.json / 10_fa_off.json"
+    },
+    "batch_tuning": {
+      "design": "唯一变量 = -b；-p 8192 -n 64 -d 0 -fa on",
+      "rows": [
+        {
+          "batch": 1024,
+          "prefill_tps": 3054.35,
+          "decode_tps": 50.54
+        },
+        {
+          "batch": 2048,
+          "prefill_tps": 3046.4,
+          "decode_tps": 50.58
+        },
+        {
+          "batch": 4096,
+          "prefill_tps": 3046.75,
+          "decode_tps": 50.61
+        }
+      ],
+      "finding": "三档差异 <0.3%，全部落在测量噪声内。**batch 调优在本机已无收益**，1024/512 即为甜点区。这条结论可以阻止后续重复调参。",
+      "source": "raw/11_batch_default.json / 12_batch_1024.json / 13_batch_4096.json"
+    },
+    "mtp_acceptance": {
+      "rows": [
+        {
+          "task": "短 prompt 生成（84+128）",
+          "accept_rate": 0.51007,
+          "accepted": 76,
+          "generated": 149,
+          "mean_len": 2.52
+        },
+        {
+          "task": "长 prompt 生成（28,344+64）",
+          "accept_rate": 0.37079,
+          "accepted": 33,
+          "generated": 89,
+          "mean_len": 2.1
+        },
+        {
+          "task": "并发生成",
+          "accept_rate": 0.39535,
+          "accepted": 34,
+          "generated": 86,
+          "mean_len": 2.17
+        },
+        {
+          "task": "重复生成",
+          "accept_rate": 0.42788,
+          "accepted": 89,
+          "generated": 208,
+          "mean_len": 2.27
+        },
+        {
+          "task": "重复生成",
+          "accept_rate": 0.41706,
+          "accepted": 88,
+          "generated": 211,
+          "mean_len": 2.24
+        }
+      ],
+      "finding": "接受率 0.371~0.510，平均接受长度 2.10~2.52。短 prompt 的接受率最高（0.51），长上下文下降（0.37）—— 与「上下文越长、分布越分散、draft 越难猜准」的直觉一致。",
+      "source": "raw/D_mtp_q8q4_server.log 的 `draft acceptance = ...` 行"
+    },
+    "concurrency_ab": {
+      "design": "唯一变量 = KV 精度；MTP + --parallel 2 + 64K；每配置 4 轮，取后 3 轮中位数（第 1 轮含冷启动）",
+      "rows": [
+        {
+          "kv": "q8_0/q4_0",
+          "system_tps": [
+            110.13,
+            113.34,
+            121.29,
+            112.57
+          ],
+          "median": 112.95,
+          "vram_mib": 19871
+        },
+        {
+          "kv": "q8_0/q8_0",
+          "system_tps": [
+            95.06,
+            99.02,
+            107.26,
+            107.73
+          ],
+          "median": 103.14,
+          "vram_mib": 20383
+        },
+        {
+          "kv": "f16/f16",
+          "system_tps": [
+            102.15,
+            109.65,
+            116.26,
+            116.14
+          ],
+          "median": 112.9,
+          "vram_mib": 22089
+        }
+      ],
+      "finding": "三档并发系统吞吐相当（103~113 t/s），但显存差 2.2 GiB。f16 的 22,089 MiB 已违反 4 GiB 冗余约束（余量 2.42 GiB），因此实际可选的是 q8q4 与 q8q8。",
+      "source": "raw/ab_result.json（ab.py）"
+    },
+    "mtp_vs_parallel": {
+      "design": "唯一变量 = 是否开 MTP；均为 --parallel 2 + 64K + q8_0/q4_0",
+      "without_mtp": {
+        "decode_tps": 48.37,
+        "decode_tps_system": 65.57,
+        "decode_tps_32k": 39.0
+      },
+      "with_mtp": {
+        "decode_tps": 87.27,
+        "decode_tps_system": 112.95,
+        "decode_tps_32k": 65.16
+      },
+      "finding": "**MTP 与多槽位并发可以同时开启**：系统吞吐从 65.57 提升到 112.95 t/s（+72%），人均 69.0 t/s。部署报告「MTP 开启时建议 --parallel 1」的推测在本构建上不成立。",
+      "source": "raw/B_prod_q8q4_* 与 raw/G_mtp_p2_* / ab_result.json"
+    },
+    "thermal": {
+      "gpu_temp_c_range": [
+        63,
+        68
+      ],
+      "idle_temp_c": 29,
+      "max_temp_c_30min": 68,
+      "fan_pct": 30,
+      "max_power_w": 425.5,
+      "throttle_observed": false,
+      "source": "raw/H_soak_summary.json（30 分钟双槽位 + MTP 压测，nvidia-smi 每 2 s 采样）",
+      "note": "30 分钟持续压测最高 68°C，远低于 83°C 的降频阈值；功耗峰值 425.5 W 已贴住 4090 D 的 425 W 功耗墙。"
+    },
+    "vision": {
+      "prompt_tokens": 78,
+      "prompt_ms": 493.3,
+      "predicted_tps": 48.26,
+      "content": "红色",
+      "reasoning": "用户询问图片背景纯色是红、蓝还是绿，要求只回答颜色。观察图片，整个画面呈现单一的红色，没有蓝色或绿色成分。因此答案应为“红色”。需严格遵守“只回答颜色”的指令，不添加多余文字。",
+      "finding": "mmproj 正常挂载：1×1 红色 PNG 被正确识别为「红色」，视觉 Prefill 493.3 ms。挂载 mmproj 后显存从 17,463 增至 18,599 MiB（+1,136 MiB），与 mmproj 文件 885 MiB 同量级（差额为视觉编码器的运行时缓冲）。",
+      "source": "raw/F_mm_response.json + raw/F_mm_server.log"
+    },
+    "cross_check": {
+      "llama_bench_decode": 50.96,
+      "llama_server_decode": 49.21,
+      "delta_pct": -3.4,
+      "note": "llama-bench 的 tg 是纯解码（不含采样、HTTP、首 token）；llama-server 端到端含采样与传输。3.4% 的差额就是这部分开销 —— 引用时必须标明是哪个口径。"
+    }
+  },
+  "measurement_protocol": {
+    "tool": "llama-bench（阶段吞吐）+ llama-server + 流式 HTTP 客户端（端到端/并发）",
+    "tool_version": "llama.cpp 0.7.0-dev, commit 547208d（CUDA 12.8, sm_89）",
+    "statistic": "llama-bench 每配置 -r 3~5 取 avg_ts；端到端每场景重复 2~3 次取中位数；并发场景每配置 4~5 轮，取后几轮中位数",
+    "measurement_point": "llama-bench：进程内计时，不含 HTTP 与采样；客户端：流式 SSE，TTFT=首 token 到达，Decode=首 token 到末 token 的斜率",
+    "backend": "gpu",
+    "backend_label": "CUDA 后端",
+    "accel_flags": [
+      "-ngl",
+      "99"
+    ],
+    "threads": 96,
+    "model_placeholder_note": "命令中的 $MODEL 指 /root/autodl-tmp/models/Qwen3.8-27B-UD-Q4_K_M.gguf",
+    "flags": [
+      {
+        "flag": "-p N",
+        "meaning": "Prefill 口径：一次性处理 N 个 token 的**纯 prompt 吞吐**，不含采样与首 token 排队"
+      },
+      {
+        "flag": "-n N",
+        "meaning": "Decode 口径：在已有上下文中自回归生成 N 个 token 的**稳态速率**，排除首 token"
+      },
+      {
+        "flag": "-d N",
+        "meaning": "上下文深度：测量前先用合成 token 把 KV Cache 填到 N，再测 Prefill/Decode"
+      },
+      {
+        "flag": "-ngl 99",
+        "meaning": "全部 64 层卸载到 GPU。任何一层留在 CPU 都会引入 PCIe 往返（单层 16.8 ms）"
+      },
+      {
+        "flag": "-fa on",
+        "meaning": "FlashAttention 显式开启；新版 llama.cpp 必须带值，裸 --flash-attn 会报错"
+      },
+      {
+        "flag": "-ctk/-ctv",
+        "meaning": "KV Cache 的 K/V 量化类型。**注意**：q8_0-q4_0 组合在本构建下没有 FA 向量 kernel，会回退为 f16 转换"
+      },
+      {
+        "flag": "-md + --spec-type draft-mtp",
+        "meaning": "MTP 投机解码：Draft 用 -ngld 99 全层卸载，否则走 CPU 会拖垮整体"
+      },
+      {
+        "flag": "-b/-ub",
+        "meaning": "batch/ubatch。本机实测 1024/2048/4096 无差异"
+      },
+      {
+        "flag": "-r N",
+        "meaning": "重复次数（llama-bench 取 avg_ts，离散度见 stddev_ts）"
+      },
+      {
+        "flag": "-o json",
+        "meaning": "结构化输出，供框架解析；原始 stdout 落盘 raw/"
+      }
+    ],
+    "conventions": [
+      "llama-bench 的 Decode（tg）是**纯解码**吞吐：不含采样、HTTP、首 token。同机同配置 llama-bench 50.96 t/s vs llama-server 49.21 t/s（差 3.4%），引用时必须标明来源。",
+      "端到端 TTFT 的计数口径：reasoning_content 与 content 任一出现即算首 token（思考链也占用户等待时间）。若只计 content，MTP 配置的 TTFT 会多算整段思考链。",
+      "并发系统吞吐只统计**后几轮**：第 1 轮包含 llama-server 的冷启动与图捕获，会系统性偏低。",
+      "llama-server 默认开启 Prefix Cache：同 prompt 重复请求会跳过 Prefill（日志 `selected slot by LCP similarity`）。测并发吞吐时应确认每轮都是同一起点，否则数字会因缓存命中而偏高。",
+      "所有测量在同一台机器、同一构建、同一模型文件下完成；**每次对照的唯一变量只有一项**（见各表的 design 字段）。",
+      "独立显存带宽不受主机负载影响，因此本批数据不需要负载准入条件（与 CPU 后端的台账不同）。"
+    ]
+  },
+  "environment_verification": {
+    "collected": "2026-10-18",
+    "activities": [
+      {
+        "activity": "设备连接",
+        "status": "pass",
+        "evidence": "SSH 直连云端实例（connect.cqa1.seetacloud.com:37607），nvidia-smi 可见 RTX 4090 D 24,564 MiB"
+      },
+      {
+        "activity": "SDK / 驱动安装",
+        "status": "pass",
+        "evidence": "驱动 580.76.05；CUDA Toolkit 12.8 已装（nvcc 12.8.93，位于 /usr/local/cuda/bin，需显式加入 PATH）"
+      },
+      {
+        "activity": "Runtime 部署",
+        "status": "pass",
+        "evidence": "llama.cpp commit 547208d 从源码编译，产物 llama-cli / llama-bench / llama-server / llama-perplexity 均可执行"
+      },
+      {
+        "activity": "编译环境配置",
+        "status": "pass",
+        "evidence": "cmake 3.22.1 + gcc 11.4.0 + nvcc 12.8，-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89 -DCMAKE_BUILD_TYPE=Release，-j16 编译成功"
+      },
+      {
+        "activity": "模型加载验证",
+        "status": "pass",
+        "evidence": "15.32 GiB 权重加载 + 2 个槽位初始化共 7.43 s（日志 0.154 s → 7.585 s），无报错"
+      },
+      {
+        "activity": "Demo 运行验证",
+        "status": "pass",
+        "evidence": "纯文本对话输出连贯；多模态 1×1 红色 PNG 被正确识别为「红色」，视觉 Prefill 493.3 ms"
+      },
+      {
+        "activity": "交付物可执行性验证",
+        "status": "pass",
+        "evidence": "直接运行 perfkit 生成的 start_optimized.sh（SERVER_BIN 指向本次构建）→ 服务正常起来、显存 19,871 MiB（与测量时一致，证明 -ngl 99 全层卸载生效）、单流请求 77.82 t/s"
+      }
+    ],
+    "model_load": {
+      "wall_seconds": 7.43,
+      "peak_vram_mib": 17463,
+      "tensor_count": 866,
+      "tensors_ignored": 15,
+      "command": "llama-server -m $MODEL -ngl 99 --parallel 2 --ctx-size 65536 --cache-type-k q8_0 --cache-type-v q4_0 --flash-attn on"
+    },
+    "demo_run": {
+      "prompt": "你好，请用一句话介绍你自己。",
+      "output": "（纯文本对话验证通过；多模态样本见 extra.vision）",
+      "prompt_tps": 324.9,
+      "gen_tps": 49.21,
+      "wall_seconds": 2.87,
+      "command": "python3 client.py --mode single --prompt-tokens 90 --max-tokens 128 --repeats 3"
+    },
+    "warnings_observed": [
+      "no FlashAttention vector kernel compiled for K/V types q8_0-q4_0, converting K and V to f16 instead (slow) —— 直接影响 q8q4 的长上下文单流吞吐（-13%）",
+      "model has unused tensor blk.64.* (15 个，共 334.75 MiB) —— MTP 预测块在主模型文件里但未被主模型使用，只在挂载 -md 时生效"
+    ],
+    "verdict": {
+      "environment_correct": true,
+      "model_loads_stably": true,
+      "no_fallback": true,
+      "note": "环境验证通过：模型可稳定加载、纯文本与多模态输出均正确、全部 64 层在 GPU 上（日志无 CPU 层）。发现一条 kernel 覆盖缺口（q8_0-q4_0 的 FA 向量化），已记入风险项。"
+    },
+    "artifact_check": {
+      "artifact": "output/qwen3.8-27b-decode-opt/start_optimized.sh",
+      "how": "SERVER_BIN=/root/autodl-tmp/llama.cpp/build/bin/llama-server bash start_optimized.sh",
+      "vram_used_mib": 19871,
+      "single_stream_tps": 77.82,
+      "verdict": "生成物可直接执行；参数与测量时一致（含 -ngl 99）"
+    }
+  },
+  "quality": {
+    "ppl": {
+      "dataset": "WikiText-2 raw test（HuggingFace Salesforce/wikitext, wikitext-2-raw-v1）",
+      "tool": "llama-perplexity（llama.cpp 547208d）",
+      "params": {
+        "ctx": 512,
+        "batch": 512,
+        "chunks": 40,
+        "ngl": 99,
+        "flash_attn": "on"
+      },
+      "rows": [
+        {
+          "quant": "Q6_K (UD)",
+          "ppl": 5.8059,
+          "stddev": 0.1371,
+          "source": "raw/ppl_q6k.log",
+          "role": "参照档（本机可装下的最高精度档）"
+        },
+        {
+          "quant": "Q4_K_M (UD)",
+          "ppl": 5.8216,
+          "stddev": 0.13717,
+          "source": "raw/ppl_q4km.log",
+          "role": "部署档位"
+        }
+      ],
+      "command": "llama-perplexity -m $MODEL -f wikitext2_test.txt -ngl 99 -fa on -c 512 -b 512 --chunks 40",
+      "confidence": "measured",
+      "caveat": "40 chunks × 512 ctx 只覆盖约 2 万 token，是抽样口径而非全量 WikiText-2；两组测量的 stddev 均为 0.137，远大于 0.27% 的差额 —— **该劣化在当前采样规模下不显著**，只能说明「没有可测量的大幅劣化」，不能说明「劣化精确为 0.27%」。要给出更紧的界，需跑全量测试集（约 280 chunks）。",
+      "reference_note": "**参照档是 Q6_K 而不是 F16**：F16 权重需约 51 GiB，24GB 单卡装不下，因此用 Q6_K（21.98 GB，可全层卸载）作为可达的最高精度参照。这意味着「Q4_K_M 相对 F16 的劣化」仍然未知，但相对 Q6_K 的劣化只有 +0.27%，而 Q6_K 与 F16 的差距通常远小于 Q4 与 Q6 的差距 —— 因此可以把 +0.27% 当作劣化上界的粗略估计。",
+      "delta_pct_vs_reference": 0.27
+    },
+    "output_consistency": {
+      "status": "partial",
+      "evidence": "多模态 1×1 红色 PNG 两次独立请求均回答「红色」，reasoning 内容一致；但未做同输入多次采样的格式合法率统计"
+    },
+    "needle": {
+      "design": "多针检索：一次请求埋 3 条互不相关的事实（10% / 50% / 90% 位置），要求一次答出全部 3 条；temperature=0",
+      "depths": [
+        32000,
+        60000
+      ],
+      "actual_prompt_tokens": {
+        "32000": 28934,
+        "60000": 54121
+      },
+      "configs": [
+        {
+          "kv": "q8_0/q4_0（选定配置）",
+          "hit_32k": "3/3",
+          "hit_60k": "3/3",
+          "result": "全中"
+        },
+        {
+          "kv": "q8_0/q8_0",
+          "hit_32k": "3/3",
+          "hit_60k": "3/3",
+          "result": "全中"
+        },
+        {
+          "kv": "f16/f16（对照）",
+          "hit_32k": "3/3",
+          "hit_60k": "3/3",
+          "result": "全中"
+        }
+      ],
+      "finding": "三种 KV 精度在 32K 与 60K 上下文下均 3/3 命中，**未检出 q4_0 Value 量化对检索的损伤**。",
+      "caveat": "**这个结论的强度有限，不能当成「q4_0 无风险」的证据**：① 只有 3 条针、每条只问一次（无重复采样）；② 针的内容高度独特（验证码、日期、路径），比真实业务里的「中段技术细节」好检索得多；③ 未测 needle 与问题语义相近、需要做细粒度区分的场景。要真正量化 q4_0 的风险，需要更难的测试集（多针同类事实、需要聚合多处的推理题）与多次采样。",
+      "source": "raw/needle_result.json（单针，6/6 全中）/ raw/needle2_result.json（多针，3/3 全中）",
+      "command": "python3 needle2.py --depth 60000  # 服务端 --parallel 1 --ctx-size 65536"
+    }
+  }
+}

@@ -1,0 +1,39 @@
+model:
+  name: Qwen2.5-1.5B-Instruct
+  version: "2.5"
+  family: Qwen
+  params_total: 1777088000
+  params_active: 1777088000
+  weight_format: GGUF
+  quantization: Q4_K_M
+  file: /Users/zhuzhichao/Documents/agent/deploy/llama/llama_test/qwen2.5-1.5b-instruct-q4_k_m.gguf
+  capabilities: [text, instruct]
+architecture:
+  arch: qwen2
+  n_layer: 28
+  hidden_size: 1536
+  intermediate_size: 8960
+  n_head: 12
+  n_head_kv: 2
+  head_dim: 128
+  vocab_size: 151936
+  rope_theta: 1000000.0
+  activation: swiglu
+  norm: rmsnorm
+  norm_eps: 1.0e-6
+  tie_embeddings: false
+  # 嵌入层实际量化位宽（输入表 Q4_K + 输出表 Q6_K 的加权平均）。
+  # 不填则按 F16 计 —— 在本模型上会高估 3.5 倍（F16 两份表 2.66 GiB
+  # vs 实际 0.31 GiB），进而让逐层权重拆解严重失真。
+  embedding_bits: 5.53
+  max_ctx_native: 32768
+  max_ctx_deployed: 16384
+artifacts:
+  - role: main
+    file: qwen2.5-1.5b-instruct-q4_k_m.gguf
+    bytes: 1117320736
+precision_ladder:
+  - {quant: F16, bits_per_weight: 16.0, est_weight_bytes: 3554176000, ppl: null}
+  - {quant: Q8_0, bits_per_weight: 8.5, est_weight_bytes: 1885658000, ppl: null}
+  - {quant: Q6_K, bits_per_weight: 6.5625, est_weight_bytes: 1456520000, ppl: null}
+  - {quant: Q4_K_M, bits_per_weight: 4.8125, est_weight_bytes: 1117320736, ppl: null}

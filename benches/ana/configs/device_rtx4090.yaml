@@ -1,0 +1,84 @@
+# ============================================================================
+# 设备画像（Device Profile）· 对应业务地图 L4「CPU/GPU/NPU 硬件与 Kernel」
+# ----------------------------------------------------------------------------
+# 本文件已按目标机实测核验（2026-10-18，云端实例）。
+# 所有 *_peak 字段是 roofline 分析的物理上界，务必填厂商标称值而非实测值。
+# ============================================================================
+
+device:
+  name: NVIDIA GeForce RTX 4090 D
+  vendor: NVIDIA
+  kind: gpu                       # cpu | gpu | npu | dsp | hybrid
+  arch: Ada Lovelace
+  compute_capability: "8.9"       # [M] 决定 llama.cpp 的 -DCMAKE_CUDA_ARCHITECTURES=89
+  form_factor: discrete           # discrete | integrated | unified-memory | soc
+  note: >
+    4090 D 是面向中国市场的规格调整版：显存子系统与 4090 相同
+    （24 GiB GDDR6X / 384-bit / 1008 GB/s），但功耗墙由 450W 降到 425W，
+    SM 数略减。因此**带宽推导的 Decode 上界对两者一致**，功耗与热数据不可互引。
+
+memory:
+  vram_total_mib: 24564           # [M] nvidia-smi 实测（可用 24080 MiB，其余为驱动保留）
+  mem_type: GDDR6X
+  mem_bus_width_bit: 384
+  mem_bandwidth_gbps_peak: 1008   # [M] 厂商标称峰值带宽，roofline 分母
+  mem_bandwidth_gbps_measured: null  # [T] 由 cuda_bw_probe 实测填入（见报告 §0.6）
+  l2_cache_mib: 72                # [M]
+  unified_memory: false           # 独立显存：Host↔Device 搬运有真实成本
+
+compute:
+  sm_count: 128
+  cuda_cores: 16384
+  tensor_cores_gen: 4             # 4th gen Tensor Core
+  fp32_tflops_peak: 82.6
+  fp16_tflops_peak: 165.2         # dense（非稀疏）
+  bf16_tflops_peak: 165.2
+  fp8_tflops_peak: 330.3          # E4M3/E5M2，Ada 起支持
+  int8_tops_peak: 660.6
+  int4_tops_peak: 1321.2          # 仅 Tensor Core，llama.cpp 走 FP16 累加路径时不适用
+
+power_thermal:
+  tdp_w: 425                      # [M] 4090 D 的功耗墙（4090 为 450W）
+  idle_w: 15                      # [M] nvidia-smi 空载实测
+  max_temp_c: 88
+  thermal_throttle: false         # [M] 30 分钟压测最高 68°C，未触发降频
+  battery: false
+
+software:
+  driver: "580.76.05"             # [M]
+  cuda: ["12.8"]                  # [M] nvcc 12.8.93（驱动侧报告 CUDA 13.0）
+  os: Ubuntu 22.04.5 LTS          # [M]
+  gcc: "11.4.0"                   # [M]
+  engine: llama.cpp
+  engine_commit: "547208d"        # [M] 本次实测所用构建（2026-10-18 clone）
+  engine_backend: CUDA            # [M] -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89
+  host_cpu: Intel Xeon Platinum 8481C (2×48C/96T)   # [M] lscpu
+  host_ram_gb: 1007               # [M] free -g
+  toolchain: "CUDA 12.8 (nvcc 12.8.93) + GCC 11.4.0 + CMake 3.22.1；-DGGML_CUDA=ON，sm_89，Release，-j16"
+  build_command: >
+    export PATH=/usr/local/cuda/bin:$PATH &&
+    cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
+    -DCMAKE_CUDA_ARCHITECTURES=89
+    -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DLLAMA_CURL=OFF &&
+    cmake --build build --config Release -j 16
+  sdk: "CUDA Toolkit 12.8（nvcc 12.8.93，需把 /usr/local/cuda/bin 加入 PATH）"
+  runtime_deploy: "源码编译后 build/bin 下 llama-cli / llama-bench / llama-server 直接可执行；共享库同目录，无需安装"
+
+# ---- 约束与边界（影响优化方案的可行性判定）-------------------------------
+constraints:
+  max_vram_gib: 20.0              # 优化目标：峰值显存不越过此线
+  min_safety_margin_gib: 4.0      # 必须留出的安全冗余，防 OOM
+  host_device_transport_gbps: 26  # PCIe 4.0 x16 双向理论值，用于判定 CPU 回退代价
+  notes:
+    - 单层有效权重约 209 MiB（64 层均摊），PCIe 往返一次即 ~16.8ms，
+      在 19.6ms 的单步预算下吃掉 86% —— 故「零 CPU 回退」是硬约束。
+    - KV 量化在 CUDA FlashAttention 上是否走原生路径，直接决定它的收益符号
+      （见报告 §5.3：q8_0/q4_0 在本构建下被回退为 f16 转换，反而更慢）。
+
+# ============================================================================
+# 换设备
+# ----------------------------------------------------------------------------
+# 复制本文件为 device_<name>.yaml，按 docs/usage.md §2.2 的字段模板填写。
+# 本仓库只对 GPU 与 x86 CPU 两套配置做过端到端验证；SoC/NPU 配置需按
+# 厂商规格填写并重新跑闭环，不能沿用其它设备的数值。
+# ============================================================================

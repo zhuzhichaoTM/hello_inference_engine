@@ -1,0 +1,367 @@
+# ============================================================================
+# 任务定义（Task Definition）· 对应工程闭环第 1 步「问题定义」
+# ----------------------------------------------------------------------------
+# 本文件回答三件事：优化什么（scope）、怎么量（kpi）、什么算达标（acceptance）。
+# 换任务目标时只改本文件：例如把 scope 换成 "kv_cache" 或 "prefill"，
+# 后续 5 步会自动改走对应分支。
+#
+# 本次所有 KPI 目标都已按 2026-10-18 的真机实测重新标定（见 ledger.json）。
+# ============================================================================
+
+task:
+  id: qwen3.8-27b-decode-opt
+  title: Qwen3.8-27B 推理性能分析与优化
+  scope: decode                  # prefill | decode | kv_cache | memory | e2e | power
+  backend: gpu                   # cpu | gpu | npu | hybrid
+  priority: latency              # latency | throughput | memory | power | cost
+  description: >
+    在单卡 RTX 4090 D 上，以 llama.cpp CUDA 后端承载 Qwen3.8-27B（qwen35 混合架构）。
+    目标是压榨 Decode 阶段的显存带宽利用率，同时把 64K 上下文塞进 24GB 显存，
+    并保留 ≥4GiB 安全冗余。不做多机多卡扩展。
+
+# ---- 测试场景矩阵（baseline / verify 共用，保证前后可比）------------------
+scenarios:
+  - id: short_chat
+    desc: 短输入短输出（日常对话）
+    prompt_tokens: 90
+    gen_tokens: 256
+    parallel: 1
+    weight: 0.30
+  - id: long_ctx
+    desc: 长上下文（多文件代码库，32K prompt）
+    prompt_tokens: 32768
+    gen_tokens: 256
+    parallel: 1
+    weight: 0.25
+  - id: long_gen
+    desc: 长生成（深度推理思维链）
+    prompt_tokens: 512
+    gen_tokens: 2048
+    parallel: 1
+    weight: 0.20
+  - id: multi_turn
+    desc: 多轮对话（4 轮累积上下文，考察前缀复用）
+    prompt_tokens: 1024
+    gen_tokens: 128
+    parallel: 1
+    weight: 0.05
+  - id: concurrent_2
+    desc: 双槽位并发（双用户）
+    prompt_tokens: 256
+    gen_tokens: 160
+    parallel: 2
+    weight: 0.15
+  - id: soak_30min
+    desc: 30 分钟持续负载（热稳态 / 泄漏）
+    prompt_tokens: 256
+    gen_tokens: 128
+    parallel: 2
+    duration_s: 1800
+    weight: 0.10
+
+# ---- KPI 指标定义（指标口径必须唯一，否则前后对比无意义）-----------------
+# unit 与 direction 用于 verify 阶段自动判定「改善/回退」。
+kpis:
+  - key: ttft_ms
+    name: 首 Token 延迟
+    unit: ms
+    direction: lower
+    target: 500
+    scenario: short_chat
+    target_rationale: >
+      交互式对话的首字体感阈值。实测短 prompt（84 token）首 token 258.5 ms（基线）/
+      340 ms（MTP 开启）。500 ms 留出约 2× 余量以容纳调度抖动与客户端网络。
+      **注意**：32K prompt 的 TTFT 由 Prefill 主导（实测 ~9.2 s），该目标只对
+      短 prompt 成立 —— 长上下文场景应靠前缀缓存而非提升 Prefill 吞吐来改善。
+    definition: >
+      从请求发出到收到第一个输出 token 的时间。含排队 + Tokenize + Prefill +
+      采样。取 3 次重复的中位数。**计数口径**：reasoning_content 与 content
+      任一出现即算首 token（思考链也占用户等待时间）。
+  - key: prefill_tps
+    name: Prefill 吞吐
+    unit: tokens/s
+    direction: higher
+    target: 2400
+    scenario: long_ctx
+    target_rationale: >
+      实测 32K prompt 纯 Prefill 2641 t/s（llama-bench）/ 2657~3582 t/s
+      （llama-server 端到端）。目标取 2400 是实测下限的 91%，留 9% 余量。
+      **历史争议已消除**：部署报告 §3.1 的 2900 t/s 与 §4.4 的 85.5 t/s
+      相差 33.9×，本次实测证明 2900 量级才是 Prefill 的真实口径
+      （短 prompt 3170 t/s、32K prompt 2641 t/s），85.5 无法在任何标准
+      Prefill 口径下复现（若为真，32K prompt 需 383 秒）。
+    definition: prompt_tokens / prefill_seconds，仅计 Prefill 阶段。
+  - key: decode_tps
+    name: Decode 吞吐（单流）
+    unit: tokens/s
+    direction: higher
+    target: 80
+    scenario: short_chat
+    target_rationale: >
+      实测 MTP 开启后 87.3 t/s（基线 49.2 t/s）。目标 80 是实测的 92%。
+      理论上界 62.6 t/s（标称带宽）/ 54.9 t/s（实测纯读带宽）——
+      **MTP 突破了单步上界**，因为它用一次权重读取产出多个 token，
+      分母不再是「每步一遍权重」。因此本 KPI 的上界参照对 MTP 配置不适用。
+    definition: >
+      稳态自回归生成速率。排除首 token，取第 2~N token 的斜率
+      （客户端流式计时：首 token 到末 token 之间的区间）。
+      这是本次优化的主 KPI。
+  - key: decode_tps_32k
+    name: Decode 吞吐（32K 上下文）
+    unit: tokens/s
+    direction: higher
+    target: 60
+    scenario: long_ctx
+    target_rationale: >
+      实测 65.2 t/s（MTP + 双槽位 64K 配置，单请求 28,344 token prompt）。
+      目标 60 取实测的 92%。这是**生产可用口径** —— 真实工程对话很少短于几万 token。
+    definition: depth≈32K 时的稳态自回归速率（llama-server 端到端）。
+  - key: decode_tps_system
+    name: 系统总吞吐
+    unit: tokens/s
+    direction: higher
+    target: 100
+    scenario: concurrent_2
+    target_rationale: >
+      双槽位并发实测 112.95 t/s（4 轮中位数，区间 110.1~121.3）。
+      目标 100 取实测的 89%，留出槽位负载不均的余量。
+      对照：基线（单槽位）23.1 t/s，MTP+双槽位是其 4.9×。
+    definition: 所有并发槽位产出 token 之和 / 墙钟时间。
+  - key: peak_vram_mib
+    name: 峰值显存
+    unit: MiB
+    direction: lower
+    target: 20480
+    target_rationale: >
+      24 GiB 显存的 83%（20 GiB）。剩余 4 GiB 是硬性安全冗余 ——
+      要抗「并发峰值 + 长 prompt + 大 batch 同时发生」的叠加峰值。
+      实测选定配置峰值 19,871 MiB（nvidia-smi 500ms 采样）。
+    definition: >
+      进程生命周期内 nvidia-smi 观测的最大 used_memory。
+      必须覆盖 Prefill 峰值而非仅稳态。
+  - key: safety_margin_gib
+    name: 显存安全冗余
+    unit: GiB
+    direction: higher
+    target: 4.0
+    target_rationale: >
+      抗峰值冗余的经验下限。低于 4 GiB 时，一次并发的长 prompt 就可能触发 OOM，
+      而 OOM 没有「降级运行」这一档 —— 直接进程崩溃、请求全失败。
+    definition: (vram_total - peak_vram) / 1024。
+  - key: mtp_accept_rate
+    name: 投机接受率
+    unit: ratio
+    direction: higher
+    target: 0.35
+    target_rationale: >
+      实测 0.371 / 0.395 / 0.428 / 0.510（llama-server 日志逐请求统计，
+      均值长度 2.10~2.52）。0.35 取实测下限再留余量，因为接受率随任务类型
+      波动大（代码/结构化输出高，自由创作低）。
+    definition: 被主模型接受的 draft token 数 / draft 总提案数。
+  - key: band_util
+    name: 显存带宽利用率
+    unit: ratio
+    direction: higher
+    target: 0.80
+    target_rationale: >
+      实测 0.814（= 16.10 GB ÷ 19.62 ms ÷ 1008 GB/s）。设 0.80 是
+      「已达物理天花板」的判据线。**但要同时看分母**：本机纯读带宽实测
+      883.8 GB/s（标称的 87.7%），按可达带宽算已达 92.9% ——
+      kernel 层几乎没有空间，优化重心必须转向减少搬运字节或减少读取次数。
+    definition: >
+      实测有效带宽 / 标称峰值带宽。有效带宽 = 有效权重字节 / 单步耗时。
+      这是判断「是否已触及物理天花板」的核心指标。
+      **MTP 开启时该口径失效**（一步产出多个 token），需改用「每次权重
+      读取产出的 token 数」衡量。
+  - key: gpu_util
+    name: GPU 利用率
+    unit: ratio
+    direction: higher
+    target: null
+    target_rationale: >
+      实测 nvidia-smi utilization.gpu 均值 75~89%。该指标表示「有 kernel
+      在跑的时间占比」，不是 SM 占用率 —— 对访存受限的 Decode 说明不了
+      「算力是否饱和」。仅用于排除「kernel 没跑起来」这类异常，
+      不作为性能目标，也不作为 compute-bound 的判定依据。
+    definition: nvidia-smi 500ms 采样的 utilization.gpu 均值。
+  - key: power_w
+    name: GPU 功耗
+    unit: W
+    direction: lower
+    target: null
+    definition: >
+      稳态推理时的整卡功耗（nvidia-smi power.draw 采样峰值）。
+      实测 345~425 W（4090 D 功耗墙 425 W）。作为观测项记录，
+      不参与达标判定。若要评估能效，应扩展为 tokens/Joule。
+  - key: temp_c
+    name: GPU 温度
+    unit: C
+    direction: lower
+    target: 75
+    target_rationale: >
+      4090 结温上限 88°C 的 85%。留 13°C 余量是为了避免触发热降频
+      （约 83°C 起降频），而一旦降频，吞吐会断崖式下跌。
+      实测 30 分钟压测最高 68°C，未触发降频。
+    definition: 持续负载 30 分钟后的稳态温度。
+  - key: ctx_total
+    name: 总上下文容量
+    unit: tokens
+    direction: higher
+    target: 65536
+    target_rationale: >
+      业务实测：多轮工程对话 + 多文件上下文约需 34K tokens。64K 是它的 1.9 倍，
+      保证「不因上下文不足而被 400 拦截」（来源报告 §5.3 记录过 33,858 tokens 被
+      32K 上限拒绝的实例）。
+    definition: 服务端 --ctx-size 配置的总上下文。
+  - key: ppl
+    name: 困惑度
+    unit: "-"
+    direction: lower
+    target: null
+    definition: >
+      WikiText-2 上的困惑度，量化质量回归的守门指标。
+      允许相对更高精度档劣化 ≤2%，超出则拒绝该优化方案。
+      **已实测**：Q4_K_M 5.8216 / Q6_K 5.8059（+0.27%），
+      ctx=512、40 chunks、llama-perplexity。详见台账 quality.ppl。
+
+# ---- 参考源内部矛盾（必须在报告中显式标注，不可选择性引用）----------------
+# 工程分析的一条底线：当同一份参考文档给出互相矛盾的数字时，
+# 不能挑对自己结论有利的那个，必须并列展示并说明为何采信其一。
+# 本次已用真机测量**消除**了这两处矛盾，结论写在 resolved 字段里。
+source_conflicts:
+  - id: prefill_tps
+    topic: Prefill 吞吐
+    claim_a: {value: 2900, unit: tokens/s, source: "部署报告 §3.1（FlashAttention 在线注意力）"}
+    claim_b: {value: 85.5, unit: tokens/s, source: "部署报告 §4.4（32K 上下文 Prefill 实测）"}
+    ratio: 33.9
+    likely_cause: >
+      §3.1 的 2900 t/s 未标注 prompt 长度与并发配置；
+      §4.4 的 85.5 t/s 未标注测量方式。
+    adopted: claim_a
+    resolved: >
+      **已用真机测量消除**：llama-bench 纯 Prefill 实测 3170 t/s（512 token）、
+      3093 t/s（8K）、2936 t/s（16K）、2641 t/s（32K）；llama-server 端到端
+      在 28,344 token prompt 上实测 2657~3582 t/s。因此 2900 t/s 量级是
+      Prefill 的真实口径。85.5 t/s 在任何标准 Prefill 定义下都无法复现
+      （若为真，32K prompt 需 383 秒才处理完），应视为错误标注，不再引用。
+    action: "已执行：perfkit baseline --mode live 的 llama-bench 矩阵"
+  - id: kv_cache_gib
+    topic: 64K 上下文 KV Cache 容量
+    claim_a: {value: 6.50, unit: GiB, source: "旧几何公式（n_layer=64, n_head_kv=8, head_dim=128, q8_0+q4_0）"}
+    claim_b: {value: 2.20, unit: GiB, source: "部署报告 §4.4 KV Cache 显存增量"}
+    ratio: 2.95
+    likely_cause: >
+      旧几何公式假设「64 层全注意力」，而 GGUF 元数据显示这是混合架构：
+      只有 16 层是全注意力（full_attention_interval=4），其余 48 层是 SSM。
+      KV 元素数被高估 4×（64×8×128 vs 16×4×256）。
+    adopted: claim_b
+    resolved: >
+      **已用 GGUF 元数据 + 真机显存差消除**：按真值重算 64K + q8_0/q4_0
+      的 KV = 1.63 GiB。真机对照（同配置仅 KV 精度不同）实测显存差
+      2.17 GiB（f16 19,683 MiB vs q8q4 17,463 MiB），几何预测差 2.37 GiB，
+      误差 8.9% —— 几何模型与实测在容差内一致。
+    action: "已执行：GGUF 元数据核验 + 同配置显存对照"
+
+# ---- 验收标准（acceptance）------------------------------------------------
+acceptance:
+  must_pass:
+    - ctx_total >= 65536
+    - decode_tps >= 45
+    - peak_vram_mib <= 20480
+    - safety_margin_gib >= 4.0
+  should_pass:
+    - ttft_ms <= 500
+    - decode_tps_32k >= 60
+    - decode_tps_system >= 100
+    - band_util >= 0.80
+  guardrail:                      # 质量与稳定性红线，任一违反即回滚
+    - ppl_delta_pct <= 2.0        # 困惑度相对劣化不超过 2%（实测 +0.27%，已通过）
+    - no_oom: true
+    - no_cpu_fallback: true       # 不允许任何层回退 CPU
+    - soak_30min_stable: true     # 30 分钟压测无泄漏、无崩溃
+  rollback_trigger: >
+    任一 guardrail 违反，或 must_pass 中有 ≥1 项未达标且无更优方案，
+    则回滚到上一个已验证配置（记录于 output/<run>/optimize.json）。
+
+# ---- 落地复盘（项目级知识，写在配置里而非硬编码进报告模板）----------------
+retrospective:
+  tradeoffs:
+    - point: Decode 加速手段
+      chose: MTP 投机解码（+77%，49.2 → 87.3 t/s）
+      rejected: 纯调 kernel
+      why: >
+        带宽已达标称的 81.4%、可达带宽的 92.9%，kernel 层只剩个位数空间；
+        MTP 减少的是**权重读取次数**而不是每次读取的字节，量级完全不同。
+        显存代价 1.28 GiB（Draft 权重），实测峰值 19,871 MiB 仍在约束内。
+    - point: 并发策略
+      chose: MTP 与双槽位**同时开启**
+      rejected: 二选一（部署报告曾建议并发时关闭 MTP）
+      why: >
+        实测 MTP+parallel 2 的系统吞吐 112.95 t/s、人均 69 t/s，
+        均高于「关 MTP + parallel 2」的 65.6 t/s 与 43.5 t/s。
+        旧建议来自「投机解码与多槽位争抢资源」的推测，在本构建上不成立。
+    - point: KV 量化粒度
+      chose: K=q8_0 / V=q4_0
+      rejected: K/V 全 q8_0；K/V 全 f16
+      why: >
+        q8_0/q4_0 显存最省（19871 MiB，余量 4.58 GiB），是 MTP+双槽位
+        能装下的前提。全 f16 在 MTP+双槽位下要 22,089 MiB（余量 2.42 GiB，
+        违反硬约束）；全 q8_0 要 20,383 MiB（余量 4.08 GiB，贴线）。
+        **代价必须记录**：本构建的 CUDA FlashAttention 没有 q8_0-q4_0 的
+        向量化 kernel，会先转成 f16 再算（启动日志有明确警告），
+        因此单流 32K 场景下 q8q4 比 f16 慢 12~13%（llama-bench 纯解码 39.45 vs 45.37；llama-server 端到端 39.0 vs 44.3）。
+    - point: 显存与上下文
+      chose: 64K 总上下文 + 4.58 GiB 冗余
+      rejected: 榨干显存换更长上下文
+      why: 显存是硬约束，冗余是抗峰值（并发 + 长 prompt）的唯一手段
+    - point: 模型档位
+      chose: Q4_K_M（UD 动态量化）
+      rejected: Q5_K_M / Q8_0
+      why: 24GB 单卡容不下更高档；UD 策略对首末层升精度补偿了质量
+    - point: 后端
+      chose: CUDA 全层卸载
+      rejected: CPU+GPU 混合
+      why: >
+        单层有效权重 209 MiB，PCIe 4.0 x16 往返一次 16.8 ms，
+        占单步预算（19.6 ms）的 86% —— 混合必然更慢。
+  risks:
+    - risk: 长上下文质量回退
+      trigger: ctx > 16K 且 KV-V 为 q4_0
+      impact: 中段信息遗漏、答非所问
+      mitigation: 上线前跑 needle-in-haystack；必要时 K/V 升档到 q8_0
+    - risk: 并发峰值 OOM
+      trigger: 多槽位 + 长 prompt + 大 batch 同时发生
+      impact: 进程崩溃、请求全失败
+      mitigation: 保留 ≥4 GiB 冗余；客户端 Context Length 与服务端对齐
+    - risk: MTP 接受率随任务波动
+      trigger: 自由创作 / 高温度采样
+      impact: 加速比从 1.77× 掉到接近 1×
+      mitigation: 按任务类型动态开关 MTP；或改用 n-gram 草稿
+    - risk: 量化精度累积损失
+      trigger: W4 + KV4 叠加
+      impact: 整体质量下降
+      mitigation: PPL 守门（≤2%）；必要时升档 Q5_K_M
+    - risk: 参考源数字冲突未被发现
+      trigger: 直接引用未经验证的口径（如 §4.4 的 85.5 t/s）
+      impact: KPI 目标不可达、结论方向错误
+      mitigation: 用 source_conflicts 显式记录；用 live 模式重测
+    - risk: KV 量化的 FlashAttention 回退
+      trigger: --cache-type-k q8_0 --cache-type-v q4_0
+      impact: 每次注意力调用都要把 K/V 转 f16，长上下文单流吞吐 -12%
+      mitigation: >
+        重新编译时把 "q8_0-q4_0" 加入 GGML_CUDA_FA_QUANTS 环境变量；
+        或改用 q8_0/q8_0（显存 +0.65 GiB）
+  lessons:
+    - "**先算再测，但要用对公式**：本次最大的教训是「几何公式的架构假设错了」。旧画像按 64 层全注意力算 KV，实际是 16 层全注意力 + 48 层 SSM，KV 被高估 4×。第一性原理只有在输入是真值时才成立 —— 架构超参必须用 GGUF 元数据核验。"
+    - "**理论上界要用实测带宽，不是标称带宽**：标称 1008 GB/s，探针实测纯读 883.8 GB/s（87.7%）。按标称算达成率 81.4%（看似还有 19% 空间），按可达带宽算 92.9%（实际只剩 7%）。用错分母会把「已到天花板」误判成「还有优化空间」。"
+    - "**优化收益的上限由「读取次数」决定，不只是「读取字节」**：带宽榨干后，减少每步字节（量化）收益有限且有精度代价；减少读取次数（投机解码）能用一次读取产出多个 token，实测 +77%。"
+    - "**同一条经验不能跨构建照搬**：部署报告称「KV 混合量化无速度损失」「MTP 与多槽位冲突需二选一」，本次实测两条都不成立 —— 前者因 FA kernel 回退慢 12%，后者反而快 72%。原因都是 llama.cpp 版本不同。"
+    - "**收益必须与代价成对记录**：MTP +1.28 GiB 显存、KV 量化 -12% 长上下文单流吞吐。只报收益的方案在生产环境无法被安全采纳。"
+    - "**反推的架构超参必须核验**：本次用 GGUF 元数据一次性消除了 2.95× 的 KV 差额，并顺带纠正了层数（64→65 含 MTP 块）、hidden（6144→5120）、head 配置（48/8×128 → 24/4×256）、词表（151936→248320）。"
+  next_steps:
+    - {direction: 重编译 FlashAttention 量化 kernel（GGML_CUDA_FA_QUANTS 加 q8_0-q4_0）, gain: 长上下文单流 +12%，可让 KV 量化不再有速度代价, priority: P0, precondition: 重新编译 llama.cpp}
+    - {direction: 长上下文质量专项评测（needle-in-haystack）, gain: 把 q4_0 KV 的风险量化, priority: P0, precondition: needle 测试集}
+    - {direction: PPL 评测（WikiText-2 + 中文长文本）, gain: 量化质量守门, priority: P0, precondition: 评测集下载}
+    - {direction: Prefix Cache 前缀复用, gain: 多轮对话 TTFT 显著下降（32K 首次 prefill 需 ~9 s）, priority: P1, precondition: 客户端保持稳定 session}
+    - {direction: 更小/更准的 Draft 模型, gain: 接受率提升、显存下降, priority: P2, precondition: 蒸馏数据与流程}
+    - {direction: 端侧移植可行性评估（NPU 算子覆盖扫描）, gain: 能效比提升, priority: P2, precondition: 目标 NPU 工具链 + 算子支持矩阵}

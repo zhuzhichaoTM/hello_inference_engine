@@ -1,0 +1,101 @@
+plans:
+  - id: quant_q4km
+    name: Q4_K_M 主模型
+    category: quantization
+    applicable_when: [memory_bound, always]
+    gain: {decode_tps: 1.0}
+    source: "[M] 实测模型档位"
+    cost: 量化一次性成本
+    risk: PPL 需实测
+    rollback: 升档 Q6_K
+  - id: kernel_avx2_fma
+    name: AVX2 + FMA + Accelerate BLAS
+    category: kernel
+    applicable_when: [memory_bound, cpu_backend]
+    gain: {decode_tps: 1.0}
+    source: "[M] llama.cpp build commit 07d937828"
+    cost: 需编译优化 flag
+    risk: 旧 CPU 不支持 AVX2
+    rollback: 通用 x86 编译
+  - id: kv_q8q4
+    name: KV Cache K=q8_0 / V=q4_0
+    category: kv_cache
+    applicable_when: [kv_cache_pressure, long_context]
+    gain: {decode_tps: 1.09, vram_gib: -0.008}
+    source: "[M] 同深度（8192）对照：7.22 → 7.89 t/s（+9.3%）"
+    cost: 长上下文检索精度风险；KV 体积减半（8K 下 0.016 → 0.008 GiB）
+    risk: 中。1.5B 模型上 KV 体积本就极小，量化收益主要在内存占用而非吞吐
+    rollback: 回到 f16
+  - id: kernel_flash_attn
+    name: Flash Attention
+    category: kernel
+    applicable_when: [prefill_bound, cpu_backend]
+    gain: {prefill_tps: 1.02}
+    source: "[M] CPU 实测 on/off 对照"
+    cost: CPU 收益有限
+    risk: 低
+    rollback: --flash-attn off
+optimization_baseline:
+  id: B0_baseline
+  name: 基线（4 线程 + F16 KV + ctx 8192，depth 8192）
+  plans: [quant_q4km, kernel_avx2_fma]
+  startup_flags: [-ngl 0, --threads 4, --ctx-size 8192]
+  rationale: >
+    基线取「CPU 默认可用配置」：4 线程（=物理核数）、F16 KV、8K 上下文。
+    注意 depth 与实验组保持一致（8192），否则前后对比会混入上下文长度的
+    影响 —— 这是本任务最容易犯的对比错误。
+  measured: {decode_tps: 7.22, prefill_tps: 34.65, ctx_total: 8192}
+  measured_source: "llama-bench 02_depth.json（depth=8192, F16 KV）"
+
+bundles:
+  - id: B0_baseline
+    name: 基线（4 线程 + F16 KV @ 8K depth）
+    plans: [quant_q4km, kernel_avx2_fma]
+    startup_flags: [-ngl 0, --threads 4, --ctx-size 8192]
+    expected: {decode_tps: 7.22, ctx_total: 8192}
+    # by_scenario 是核心数据结构：同一配置的性能**取决于场景**。
+    # 不按场景拆分，就会拿 depth=0 的 17.5 t/s 去比 depth=8192 的 7.2 t/s。
+    measured:
+      decode_tps: 7.22          # 默认口径 = 8K 深度（生产可用口径）
+      prefill_tps: 34.65
+      peak_ram_mib: 1974
+      n_depth: 8192
+      by_scenario:
+        short_chat:      {decode_tps: 17.54, prefill_tps: 69.13, ttft_ms: 925.9}
+        long_ctx_8k:     {decode_tps: 7.22,  prefill_tps: 34.65}
+        long_ctx_16k:    {decode_tps: 4.19,  prefill_tps: 22.65}
+    measured_source: "[M] llama-bench 01_threads/02_depth/06_short + llama-cli RSS 实测"
+
+  - id: B1_cpu_8k_kvq8
+    name: KV 量化（4 线程 + q8_0 KV @ 8K depth，唯一变量）
+    plans: [quant_q4km, kernel_avx2_fma, kv_q8q4]
+    startup_flags: [-ngl 0, --threads 4, --ctx-size 8192,
+                    --cache-type-k q8_0, --cache-type-v q8_0]
+    expected: {decode_tps: 7.89, ctx_total: 8192}
+    measured:
+      decode_tps: 7.89
+      prefill_tps: 11.48
+      peak_ram_mib: 1974
+      n_depth: 8192
+      by_scenario:
+        short_chat:        {decode_tps: 17.51, prefill_tps: 67.22}
+        long_ctx_8k_kvq8:  {decode_tps: 7.89,  prefill_tps: 11.48}
+        long_ctx_16k:      {decode_tps: 4.41,  prefill_tps: 5.65}
+    measured_source: "[M] llama-bench 03_kvq8 / 08_d8192_kvq8 / 10_d16384_kvq8"
+
+  - id: B2_cpu_short_opt
+    name: 短上下文最优（4 线程 + F16 KV @ depth 0）
+    plans: [quant_q4km, kernel_avx2_fma]
+    startup_flags: [-ngl 0, --threads 4, --ctx-size 8192]
+    expected: {decode_tps: 17.85, ctx_total: 8192}
+    measured:
+      decode_tps: 17.85
+      prefill_tps: 78.42
+      peak_ram_mib: 1909
+      n_depth: 0
+      by_scenario:
+        short_chat: {decode_tps: 17.54, prefill_tps: 69.13}
+    measured_source: "[M] llama-bench 01_threads.json（depth=0）"
+
+selected_bundle: B1_cpu_8k_kvq8
+compare_bundles: [B0_baseline, B1_cpu_8k_kvq8, B2_cpu_short_opt]

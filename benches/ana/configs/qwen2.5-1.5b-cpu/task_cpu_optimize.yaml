@@ -1,0 +1,201 @@
+task:
+  id: qwen2.5-1.5b-cpu-opt
+  title: Qwen2.5-1.5B-Instruct CPU 推理性能分析与优化
+  scope: decode
+  backend: cpu
+  priority: latency
+  description: >
+    在 Intel Core i7-4770HQ / macOS 上，验证 Qwen2.5-1.5B-Instruct Q4_K_M
+    的 CPU 推理基线、线程缩放、长上下文退化、KV 量化与 Flash Attention。
+scenarios:
+  - {id: short_chat, desc: 短输入短输出（depth 0）→ 承载 decode_tps, prompt_tokens: 64, gen_tokens: 128, parallel: 1, weight: 0.25}
+  - {id: long_ctx_8k, desc: 8K 上下文（F16 KV，对照组）, prompt_tokens: 512, gen_tokens: 64, parallel: 1, depth: 8192, weight: 0.25}
+  - {id: long_ctx_8k_kvq8, desc: 8K 上下文（q8_0 KV，实验组，同深度）→ 承载 decode_tps_8k / prefill_tps, prompt_tokens: 512, gen_tokens: 64, parallel: 1, depth: 8192, weight: 0.25}
+  - {id: long_ctx_16k, desc: 16K 上下文（F16 KV）, prompt_tokens: 512, gen_tokens: 64, parallel: 1, depth: 16384, weight: 0.15}
+  - {id: long_gen, desc: 长生成（深度推理思维链，2048 tokens）, prompt_tokens: 512, gen_tokens: 2048, parallel: 1, weight: 0.10}
+  - {id: multi_turn, desc: 多轮对话（4 轮累积上下文）, prompt_tokens: 1024, gen_tokens: 128, parallel: 1, weight: 0.05}
+  - {id: soak_10min, desc: 10 分钟持续负载（热稳态）, prompt_tokens: 256, gen_tokens: 256, parallel: 1, duration_s: 600, weight: 0.10}
+kpis:
+  # `scenario` 字段把指标口径**绑定到具体场景** —— 这是必须的：
+  # CPU 后端上 Decode 速率随上下文深度从 17.5 掉到 4.2 t/s，
+  # 不绑定场景的「decode_tps」是个没有意义的数字。
+  - key: decode_tps
+    name: Decode 吞吐（单流，短上下文）
+    unit: tokens/s
+    direction: higher
+    target: 15
+    scenario: short_chat
+    target_rationale: >
+      物理上界 22.91 t/s（= 25.6 GB/s ÷ 1.04 GiB）的 65%，留出「未达上界」的余量；
+      同时是人类中文阅读速度（约 7~8 t/s）的 2 倍，保证「打字机」体感流畅。
+    definition: >
+      depth=0 时单请求稳态自回归速率。这是 CPU 后端的**性能上界**，
+      代表机器空闲、上下文很短时的最好情况。
+  - key: decode_tps_8k
+    name: Decode 吞吐（单流，8K 上下文）
+    unit: tokens/s
+    direction: higher
+    target: 7
+    scenario: long_ctx_8k_kvq8
+    target_rationale: >
+      取 8K 深度实测值 7.22 t/s 的 97% 作为守门线（略低于实测，用于拦截优化后回退）；
+      同时 ≥ 中文阅读速度，保证长上下文场景仍可用。
+    definition: >
+      depth=8192 时单请求稳态速率。这是**生产可用口径** ——
+      真实对话很少短于几千 token，长上下文下的速率才是用户实际体验到的。
+  - key: prefill_tps
+    name: Prefill 吞吐
+    unit: tokens/s
+    direction: higher
+    target: 30
+    scenario: long_ctx_8k_kvq8
+    target_rationale: >
+      8K 深度实测 34.65 t/s 的 87%。留 13% 余量是因为 Prefill 对系统负载更敏感
+      （Compute-bound，受 CPU 抢占影响更大），目标不宜贴着实测值设。
+    definition: prompt_tokens / prefill_seconds；口径取 8K 深度（含 KV 读开销）
+  - key: ttft_ms
+    name: 首 Token 延迟
+    unit: ms
+    direction: lower
+    target: 1500
+    scenario: short_chat
+    target_rationale: >
+      短上下文实测首字延迟 930 ms 的 1.6 倍。1.5 s 是交互式对话的体感阈值
+      （超过后用户会明显感觉「卡了一下」），留余量以容纳采样与调度抖动。
+    definition: >
+      从请求发出到第一个 token 的时间（含 Tokenize + Prefill + 采样）。
+      口径取短上下文场景（depth=0）：这是用户感知的首字延迟下界。
+      长上下文场景的 TTFT 由 prompt 长度主导，单独在 §2.3 曲线上体现。
+  - key: power_w
+    name: 推理功耗
+    unit: W
+    direction: lower
+    target: null
+    definition: >
+      稳态推理时的整机功耗。**本机未采集** —— macOS 读取功耗需
+      `sudo powermetrics`，本次分析未启用；该 KPI 保留为待采集项，
+      不参与达标判定。端侧移植时此项为必测（并应扩展为 tokens/Joule）。
+  - key: peak_ram_mib
+    name: 峰值内存
+    unit: MiB
+    direction: lower
+    target: 4096
+    target_rationale: >
+      本机 16 GiB 的 25%。留 12 GiB 给系统与其他进程，避免推理进程被
+      macOS 的内存压力机制影响；实测峰值 1974 MiB 只占目标的一半，余量充足。
+    definition: CPU 进程 RSS 峰值（/usr/bin/time -l 的 maximum resident set size）
+  - key: thread_scaling
+    name: 线程缩放（4线程/最优线程）
+    unit: ratio
+    direction: higher
+    target: 0.95
+    target_rationale: >
+      4 线程即本机物理核数，实测就是最优点（比值 1.00）。设 0.95 是容许 5% 抖动；
+      若低于此值说明线程数没配到物理核数，属于明确的配置缺陷。
+    definition: 4 线程 Decode ÷ 最优线程 Decode；CPU 后端的关键调优指标
+  - key: ctx_decay_8k
+    name: 8K 上下文衰减率
+    unit: ratio
+    direction: higher
+    target: 0.45
+    target_rationale: >
+      实测 0.41（7.22 ÷ 17.74）。目标设 0.45 相当于「不劣于实测 10%」，
+      用于拦截上下文处理路径上的回退（例如 KV 量化失效、前缀缓存误命中）。
+    definition: depth 8192 的 Decode ÷ depth 0 的 Decode；反映 KV 挤占带宽的程度
+  - key: ppl
+    name: 困惑度
+    unit: "-"
+    direction: lower
+    target: null
+    definition: 量化质量守门
+acceptance:
+  must_pass:
+    - decode_tps_8k >= 7      # 生产可用口径（8K 上下文）
+    - peak_ram_mib <= 4096
+  should_pass:
+    - decode_tps >= 15        # 短上下文上界
+    - prefill_tps >= 30
+    - thread_scaling >= 0.95
+  guardrail:
+    - ppl_delta_pct <= 2.0
+    - {no_oom: true}
+    # CPU 后端不存在「回退」概念（权重本就在系统内存），
+    # 真正要守的是「别静默走 GPU」—— 本机装了 Metal，不钉死 -ngl 0 会走核显。
+    - {no_silent_gpu_offload: true}
+    - {soak_10min_stable: true}
+  rollback_trigger: 任一 guardrail 违反，或 must_pass 未达标则回滚到基线。
+source_conflicts: []
+retrospective:
+  tradeoffs:
+  tradeoffs:
+    - point: 线程数
+      chose: 4（物理核数）
+      rejected: 8（逻辑核）
+      why: >
+        实测 1→2→4 线程 Decode 从 9.49 涨到 17.85 t/s（+88%），
+        但 8 逻辑线程反而掉到 13.03 t/s（-27%）。
+        超线程共享执行单元与访存端口，在访存密集的 GEMV 上形成竞争。
+        CPU 后端的第一个调优动作应该是扫线程数，而不是调参数量化。
+    - point: KV 精度
+      chose: q8_0（K/V 同为 q8_0）
+      rejected: F16 与 q4_0
+      why: >
+        同深度（8192）对照实测：Decode 7.22 → 7.89 t/s（+9.3%），内存占用减半。
+        未选 q4_0 是因为 1.5B 模型对低比特更敏感，而 q8_0 的精度代价远小于收益。
+        但必须记录代价：Prefill 从 34.65 掉到 11.48 t/s（-67%）——
+        量化救 Decode 但伤 Prefill。
+    - point: 上下文长度
+      chose: 8K（而非原生 32K）
+      rejected: 一次性拉满 32K
+      why: >
+        depth 8K→16K 时 Decode 从 7.2 掉到 4.2 t/s（-42%）。
+        CPU 的内存带宽是共享资源，KV 越长与权重读取的竞争越激烈。
+    - point: Flash Attention
+      chose: auto（默认）
+      rejected: 强制 on / off
+      why: >
+        实测 on=77.88 / off=71.86 / auto=78.42 t/s（Prefill），
+        auto 与 on 基本持平，无需显式指定；CPU 上 FA 收益远小于 GPU。
+  risks:
+    - risk: 长上下文速度断崖
+      trigger: ctx >= 8K
+      impact: Decode 17.7 → 7.2 → 4.2 t/s（depth 0/8K/16K）
+      mitigation: >
+        限制上下文到 8K；启用 KV q8_0 可回收约 9% 的 Decode；
+        长上下文请求路由到独显后端（这是产品层决策，非性能层可解）
+    - risk: KV 量化拖慢 Prefill
+      trigger: 开启 --cache-type-k/v 非 f16
+      impact: 8K 深度下 Prefill 34.65 → 11.48 t/s（-67%）
+      mitigation: >
+        若首字延迟是硬约束则不开 KV 量化；或按请求类型分流
+        （长输出用 KV 量化、短 prompt 用 F16）
+    - risk: 系统负载污染测量
+      trigger: 机器被其他进程占用（load > 物理核数）
+      impact: 同一配置实测相差 2 倍（17.85 → 9.19 t/s）
+      mitigation: >
+        采集前确认 uptime 的 1 分钟负载 < 4；框架已把采集时负载
+        写入 baseline.json 的 environment，报告 §0 会给出可否引用的判断
+    - risk: CPU 热降频
+      trigger: 持续运行超过数分钟
+      impact: 吞吐波动
+      mitigation: 4 物理核、动态降线程、插电运行；补做 10 分钟稳态压测
+  lessons:
+    - "**线程数存在最优值，且最优值就是物理核数**：实测 1→2→4 线程 Decode 从 9.49 涨到 17.85 t/s（+88%），但 8 逻辑线程反而掉到 13.03 t/s（-27%）。超线程共享执行单元与访存端口，在访存密集的 GEMV 上形成竞争。CPU 后端的第一个调优动作应该是扫线程数，而不是调参数量化。"
+    - "**长上下文衰减在 CPU 上远比 GPU 剧烈**：depth 0→16K，Decode 从 17.74 掉到 4.19 t/s（-76%）。原因是 CPU 的内存带宽本就紧张（实测 mmap 读 17.3 GB/s，理论峰值 25.6 GB/s），KV 读写直接与权重读取抢带宽。"
+    - "**KV 量化的价值随模型规模变化**：1.5B 模型上 8K KV 仅 0.016 GiB，同深度下 q8_0 相对 f16 只带来 +9.3%；而 27B 模型上 64K KV 高达数 GiB，KV 量化是「装不装得下」的前提。同一条优化经验不能跨规模照搬。"
+    - "**CPU 后端的测量结果必须连同系统负载一起报告**：本次采集窗口负载 <2 时 4 线程 Decode 为 17.85 t/s；机器被外部负载压到 90+ 时同一配置只剩 9.19 t/s（-49%）。独显有独立显存带宽，不存在这个问题。"
+    - "**llama-bench 与 llama-cli 的口径不同，不可混用**：同机同配置下 llama-bench 报 13.15 t/s（纯解码，不采样），llama-cli 报 8.4 t/s（端到端墙钟，含采样与首 token）。两者相差 35%，引用时必须标明来源。"
+  next_steps:
+    - {direction: 真实功耗采集, gain: tokens/Joule, priority: P0, precondition: powermetrics 或外部功率计}
+    - {direction: PPL 评测, gain: 量化质量守门, priority: P0, precondition: WikiText-2 测试集}
+
+# ---- 回归测试矩阵（按本任务与后端定制，不套用 GPU 模板）-------------------
+regression_matrix:
+  - {dim: 多输入长度, coverage: "64 / 512 / 2K / 8K / 16K prompt", criteria: "无 400 报错、无截断、Prefill 耗时随长度线性"}
+  - {dim: 线程数, coverage: "1 / 2 / 4 / 8 线程", criteria: "4 线程（物理核）为最优点；8 线程不低于 4 线程的 90%"}
+  - {dim: 上下文深度, coverage: "depth 0 / 2K / 8K / 16K", criteria: "衰减率符合 ctx_decay_8k 目标；无 OOM"}
+  - {dim: KV 精度, coverage: "f16 / q8_0 / q8_0+q4_0", criteria: "同深度对照，Decode 提升且 Prefill 退化在可接受范围"}
+  - {dim: 系统负载, coverage: "空闲 / 中等（<2× 核数）", criteria: "采集时记录负载；负载超标的数据标注为不可用"}
+  - {dim: 长时间运行, coverage: "10 分钟持续负载", criteria: "无内存泄漏（RSS 稳定）、无热降频断崖"}
+  - {dim: 质量回归, coverage: "PPL（WikiText-2）+ 中文长文本", criteria: "PPL 相对 f16 劣化 ≤2%"}
+  - {dim: 端到端, coverage: "llama-cli 真实对话 + llama-server API", criteria: "首字延迟可接受、输出连贯、无乱码"}
