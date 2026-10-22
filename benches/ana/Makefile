@@ -1,6 +1,6 @@
 # perfkit 常用命令（make 是可选糖，所有命令都能直接跑）
 # ---------------------------------------------------------------------------
-.PHONY: help selftest closure closure-probe closure-live env build probe query backends skills skills-install clean report charts
+.PHONY: help selftest audit closure closure-probe closure-live env build probe query backends skills skills-install clean report charts
 
 RUN ?= qwen3.8-27b-decode-opt
 CONFIG ?= configs
@@ -17,6 +17,9 @@ help:  ## 显示本帮助
 
 selftest:  ## 框架自检（不依赖 GPU，校验公式与两套参考配置可跑通）
 	$(PY) scripts/selftest.py
+
+audit:  ## 报告一致性审计（报告/图表/台账三处数字是否同口径）
+	$(PY) scripts/audit_reports.py
 
 env:  ## 采集环境画像 → output/_env/
 	bash scripts/collect_env.sh

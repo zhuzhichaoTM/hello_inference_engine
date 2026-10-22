@@ -158,7 +158,20 @@ def _cell(bundle: dict, key: str, cfg: PerfConfig, ledger: dict,
         return None, "todo", ""
 
     # 2) 扁平实测值
-    if key in m and m[key] is not None:
+    #
+    # ⚠️ 一个必须拦住的误用：当 KPI **绑定了场景**、bundle 又声明了 by_scenario
+    #    （说明它测了多个场景）却恰好没有该场景时，扁平值可能是**另一个场景的拷贝**。
+    #    实测：CPU 的 prefill_tps 绑 long_ctx_8k_kvq8，扁平值 34.65 其实是
+    #    long_ctx_8k 的值，正确值 11.48（差 3×）。
+    #    判据不是「场景缺失」——那样会误伤只声明了扁平值的质量类 KPI ——
+    #    而是「扁平值恰好等于某个**别的**场景的同名值」，此时它必然不属于本场景。
+    _scn_copied = False
+    if scn and by_scn and scn not in by_scn and key in m and m[key] is not None:
+        for _other, _vals in by_scn.items():
+            if _other != scn and isinstance(_vals, dict) and _vals.get(key) == m[key]:
+                _scn_copied = True
+                break
+    if key in m and m[key] is not None and not _scn_copied:
         note = ""
         if key == "decode_tps" and m.get("decode_tps_range"):
             lo, hi = m["decode_tps_range"]
@@ -261,33 +274,70 @@ def _meets(value, kpi) -> bool | None:
     return value >= t if kpi["direction"] == "higher" else value <= t
 
 
-def side_effects(cfg: PerfConfig, after_bundle: dict) -> list[dict]:
-    """副作用清单 —— 收益必须与代价成对出现，否则报告不完整。"""
+def side_effects(cfg: PerfConfig, after_bundle: dict,
+                 ledger: dict | None = None) -> list[dict]:
+    """
+    副作用清单 —— 收益必须与代价成对出现，否则报告不完整。
+
+    所有数字都从**配置或台账**取，不写死：
+      · Draft 显存代价 ← `model.artifacts[role=draft_mtp].bytes`
+      · 「MTP 与并发冲突」的实测结论 ← 台账 `extra.mtp_vs_parallel`
+        （没测过就不下结论，只写「未验证」）
+    写死的 112.95 / 65.57 只对某一次运行成立，换模型换硬件后就是假数据。
+    """
     flags = after_bundle.get("startup_flags", [])
     has_mtp = flag_present(flags, "--spec-type")
     par = flag_value(flags, "--parallel", int) or 1
     ctx = flag_value(flags, "--ctx-size", int) or 8192
     v_bits = parse_quant_bits(flag_value(flags, "--cache-type-v") or "f16")
+    _led = ledger or {}
 
     out = []
     if has_mtp:
-        # 注意：这条副作用来自「推测」，本次已被实测推翻。
-        # 保留它、但把结论写清楚 —— 报告里不能只有推测没有验证。
-        out.append({"effect": "MTP 与多槽位并发的资源竞争（**本次实测不成立**）",
-                    "impact": "推测影响为接受率下降与回滚开销上升；"
-                              "实测 MTP+parallel 2 系统吞吐 112.95 t/s，"
-                              "反而高于关 MTP 的 65.57 t/s（+72%）",
-                    "mitigation": "无需处置；保留此条以记录「推测被实测推翻」",
-                    "severity": "low"})
+        _mv = (_led.get("extra") or {}).get("mtp_vs_parallel") or {}
+        _with = (_mv.get("with_mtp") or {}).get("decode_tps_system")
+        _without = (_mv.get("without_mtp") or {}).get("decode_tps_system")
+        if _with and _without:
+            _gain = (_with / _without - 1) * 100
+            _note = _mv.get("note")
+            out.append({
+                "effect": "MTP 与多槽位并发的资源竞争（**本次实测不成立**）",
+                "impact": ("推测影响为接受率下降与回滚开销上升；"
+                           f"实测 MTP+parallel {par} 系统吞吐 {_with} t/s，"
+                           f"反而{'高于' if _gain > 0 else '低于'}关 MTP 的 "
+                           f"{_without} t/s（{_gain:+.0f}%）"
+                           + (f"。**注意**：{_note}" if _note else "")),
+                "mitigation": "无需处置；保留此条以记录「推测被实测推翻」",
+                "severity": "low"})
+        else:
+            out.append({
+                "effect": "MTP 与多槽位并发可能争抢资源（**本次未验证**）",
+                "impact": "未采集「同配置开/关 MTP」的并发对照，"
+                          "因此不能断言冲突存在或不存在",
+                "mitigation": "在台账 extra.mtp_vs_parallel 补一组对照"
+                              "（with_mtp / without_mtp 的系统吞吐）后再下结论",
+                "severity": "medium"})
+        _draft = next((a.get("bytes") for a in (cfg.model.get("artifacts") or [])
+                       if a.get("role") == "draft_mtp"), None)
         out.append({"effect": "Draft 模型占用额外显存",
-                    "impact": "+1.28 GiB",
+                    "impact": (f"+{_draft / 1024 ** 3:.2f} GiB"
+                               if _draft else "体积未在配置中声明"),
                     "mitigation": "已计入显存预算；余量紧张时改用 n-gram 草稿（零显存）",
                     "severity": "low"})
     if v_bits <= 4.5:
-        out.append({"effect": "KV Cache V 侧 q4_0 量化引入注意力精度损失",
+        # 缓解措施必须反映**当前配置实际怎么做的** —— 旧版写死「K 保持 q8_0」，
+        # 在 K 也降到 q4_0 的配置上会变成一句与事实相反的说明。
+        _k_bits = parse_quant_bits(flag_value(flags, "--cache-type-k") or "f16")
+        if _k_bits > 4.5:
+            _mit = "K 保持 q8_0（已采用）；上线前跑 needle-in-haystack 与 PPL"
+        else:
+            _mit = ("K/V 均为 q4_0（本配置）：K 精度下降的风险只能靠压力测试守门 —— "
+                    "本次用 24K/20 条同类码精确检索 3/3、24K 5 针、8 项视觉题 8/8、"
+                    "PPL +0.02% 四项覆盖；样本量仍偏小，长文档精确引用需灰度")
+        out.append({"effect": "KV Cache 降到 q4_0 引入注意力精度损失",
                     "impact": "长上下文检索、中段信息保留可能劣化",
-                    "mitigation": "K 保持 q8_0（已采用）；上线前跑 needle-in-haystack 与 PPL",
-                    "severity": "medium"})
+                    "mitigation": _mit,
+                    "severity": "medium" if _k_bits > 4.5 else "high"})
     if par > 1:
         out.append({"effect": "单槽上下文被切分（总 ctx 不变，槽位数增加）",
                     "impact": f"单槽 {ctx // par} tokens，超长单请求会被截断",
@@ -314,7 +364,7 @@ def main(args) -> int:
     ledger = load_json(cfg.ledger())
 
     rows, before_b, after_b = build_comparison(cfg, ledger, optimize, baseline)
-    effects = side_effects(cfg, after_b)
+    effects = side_effects(cfg, after_b, ledger)
 
     checks = [_eval_cond(c, rows) for c in cfg.task["acceptance"]["must_pass"]]
     # should_pass 也要逐项判定并给出实测值 —— 只在 §1.8 列出条件而不判定，
@@ -335,8 +385,25 @@ def main(args) -> int:
 
     # 真实复测过的 guardrail：台账里带了该场景的实测值就说明跑过，
     # 否则不能声称「已验证」—— 这一栏最容易变成空话。
-    _soak = (ledger.get("scenarios") or {}).get("soak_30min") or {}
+    # 压测场景的 id 可能是 soak_30min / soak_15min / soak ……
+    # 写死一个名字会让「跑过压测」的配置被标成未验证。
+    _scn = ledger.get("scenarios") or {}
+    _soak_id = next((k for k in _scn if str(k).startswith("soak")), None)
+    _soak = (_scn.get(_soak_id) or {}) if _soak_id else {}
     _soak_done = _soak.get("status") != "todo" and bool(_soak.get("decode_tps_system"))
+    # 峰值显存：优先台账 memory.peak_used_mib（选定配置的实测峰值），
+    # 其次 by_config 里**选定 bundle 自己**的键 —— 不能写死某个历史 bundle id，
+    # 那会让换一套配置后这一栏变成 "None MiB" 的空话。
+    _mem = baseline.get("memory") or {}
+    _by = _mem.get("by_config") or {}
+    _sel_id = (optimize.get("selected_bundle") or {}).get("id") or ""
+    _peak_mib_any = _mem.get("peak_used_mib")
+    if _peak_mib_any is None and _sel_id:
+        _v = _by.get(_sel_id)
+        _peak_mib_any = (_v.get("peak_mib") if isinstance(_v, dict) else _v)
+    if _peak_mib_any is None and _by:
+        _first = next(iter(_by.values()))
+        _peak_mib_any = (_first.get("peak_mib") if isinstance(_first, dict) else _first)
     _guard_evidence = {
         "soak_30min_stable": (
             f'实测 {_soak.get("rounds", "?")} 轮 / {_soak.get("duration_s", 0)} s：'
@@ -345,34 +412,69 @@ def main(args) -> int:
             f'最高温 {( _soak.get("stability") or {}).get("temp_max_c")} °C，'
             f'未观测到泄漏或降频'
             if _soak_done else None),
-        "no_oom": ("实测峰值 %s MiB ≤ 约束 %s MiB，30 分钟压测显存无漂移"
-                   % ((baseline.get("memory") or {}).get("by_config", {})
-                      .get("B4_p2_64k_q8q4_mtp"),
+        "no_oom": ("实测峰值 %s MiB ≤ 约束 %s MiB，长时压测显存无漂移"
+                   % (_peak_mib_any,
                       int(float((cfg.device.get("constraints") or {})
                                 .get("max_vram_gib") or 20) * 1024))
-                   if (baseline.get("memory") or {}).get("by_config") else None),
+                   if _peak_mib_any else None),
         "no_cpu_fallback": ("`-ngl 99` 全层卸载；达成带宽与纯读带宽的比值反证"
                             "无 CPU 回退（若有回退，达成带宽会显著低于此值）"),
+        # 「只用外部产物、不自行量化」这类约束无法从测量推出，
+        # 只能从台账的声明里读 —— 有声明才算已验证，否则标未验证。
+        "no_self_quantized_in_delivery": (
+            (ledger.get("constraints") or {}).get("no_self_quantized_in_delivery")
+            if (ledger.get("constraints") or {}).get("no_self_quantized_in_delivery")
+            else None),
     }
     # PPL 红线：只有拿到了「部署档位 + 更高精度参照」两个数才能判定
     _q_ppl = ((ledger.get("quality") or {}).get("ppl") or {})
     _rows_p = _q_ppl.get("rows") or []
-    _me_p = next((r for r in _rows_p
-                  if r.get("quant", "").startswith(cfg.model.get("quantization", ""))), None)
-    _ref_p = next((r for r in _rows_p if r is not _me_p and r.get("ppl")), None)
+    # 同一量化档位可能有多行（不同 KV 精度），且台账里还可能有更低位宽的对照行。
+    # 部署行按 role=deployed 优先；参照行按 role=reference 优先 ——
+    # 否则会拿 Q3_K_M 当参照，算出「Q4 比 Q3 好 -4.4%」这种与红线无关的结论。
+    _me_p = next((r for r in _rows_p if r.get("role") == "deployed"), None) \
+        or next((r for r in _rows_p
+                 if r.get("quant", "").startswith(cfg.model.get("quantization", ""))), None)
+    _ref_p = next((r for r in _rows_p
+                   if r is not _me_p and r.get("role") == "reference" and r.get("ppl")), None) \
+        or next((r for r in _rows_p if r is not _me_p and r.get("ppl")), None)
     if _me_p and _ref_p:
         _d_pct = (_me_p["ppl"] / _ref_p["ppl"] - 1) * 100
         _guard_evidence["ppl_delta_pct"] = (
             f'{_me_p["quant"]} {_me_p["ppl"]} vs {_ref_p["quant"]} {_ref_p["ppl"]} '
             f'= {_d_pct:+.2f}%（WikiText-2，40 chunks × 512 ctx，'
             f'llama-perplexity）')
+        # 台账若还有更低精度档（用于量化「降到该档的代价」），单独列出，
+        # 避免与「相对参照档的劣化」混为一谈。
+        _lower = [r for r in _rows_p
+                  if r is not _me_p and r is not _ref_p and r.get("ppl")
+                  and r["ppl"] > _me_p["ppl"]]
+        if _lower:
+            _guard_evidence["ppl_delta_pct"] += (
+                "；同表另有更低精度档（仅用于量化代价，不参与判定）："
+                + "、".join(f'{r["quant"]} {r["ppl"]}（'
+                            f'{(r["ppl"]/_me_p["ppl"]-1)*100:+.1f}%）' for r in _lower))
+    # 视觉质量红线：需要「视觉简单题 + 难题」两组实测都拿到才判定。
+    # 数据在台账 quality.vision 段（不是 PPL 那种逐档表）——
+    # 判定口径是「简单题不掉分、难题达到可达上限」。
+    _vq = (ledger.get("quality") or {}).get("vision") or {}
+    _qs, _qh = _vq.get("simple"), _vq.get("hard")
+    if _qs is not None and _qh is not None:
+        _base_s = _vq.get("baseline_simple", _qs)
+        _base_h = _vq.get("baseline_hard", _qh)
+        _guard_evidence["vision_quality_no_regression"] = (
+            f'视觉简单题 {_qs}/{_vq.get("simple_total", 8)}（基线 {_base_s}），'
+            f'难题 {_qh}/{_vq.get("hard_total", 7)}（基线 {_base_h}）'
+            f'—— {"无回退" if _qs >= _base_s and _qh >= _base_h else "**有回退**"}')
     for g in guard:
         # 字符串型 guardrail（如 "ppl_delta_pct <= 2.0"）要按指标名匹配，
         # 不能整串比对 —— 否则永远匹配不上，红线会被永久标成「未验证」。
         _gname = str(g.get("guardrail") or "")
+        # soak_15min_stable / soak_30min_stable / soak_stable 都指向同一份压测证据
         _ev = _guard_evidence.get(_gname) or next(
             (v for k, v in _guard_evidence.items()
-             if _gname.startswith(k) or k.startswith(_gname)), None)
+             if _gname.startswith(k) or k.startswith(_gname)
+             or (k.startswith("soak") and _gname.startswith("soak"))), None)
         if _ev:
             g["status"] = "verified_live"
             g["evidence"] = _ev

@@ -33,6 +33,26 @@ from ..config import (GIB, PerfConfig, attn_layers, compute_side_analysis,
 # A/B/C/D 四类剖面的 replay 归因
 # ============================================================================
 
+def _baseline_is_speculative(cfg: PerfConfig, baseline: dict | None = None) -> bool:
+    """
+    本次 profiling 用的「基线 decode 值」是否来自含投机解码的配置。
+
+    判据优先级：
+      1) 台账 `baseline_native.speculative`（显式声明，推荐）
+      2) 回落：选定 bundle 是否带 `--spec-type`
+    """
+    try:
+        _led = load_json(cfg.ledger())
+    except Exception:
+        _led = {}
+    decl = (_led.get("baseline_native") or {}).get("speculative")
+    if decl is not None:
+        return bool(decl)
+    b = next((x for x in cfg.plan.get("bundles", [])
+              if x.get("id") == cfg.plan.get("selected_bundle")), None)
+    return bool(b and flag_present(b.get("startup_flags", []), "--spec-type"))
+
+
 def _pick_single_stream_scenario(baseline: dict) -> tuple[str, dict] | tuple[None, None]:
     """
     从基线里挑一个「单流、有 decode 实测值」的场景做单步耗时归因。
@@ -195,6 +215,12 @@ def profile_replay(cfg: PerfConfig, baseline: dict) -> dict:
     step_s = step_ms / 1000.0
 
     # ---- D. 硬件剖面：达成带宽与利用率 --------------------------------------
+    #
+    # ⚠️ **投机解码下「权重字节 ÷ 单步耗时」不是带宽**：一次权重读取产出
+    #    mean_len 个 token，算出的值会超过物理带宽（本项目实测 1347 GB/s =
+    #    标称的 134%，纯读的 153%）。这不是「kernel 突破极限」，而是分母口径
+    #    失效。此时必须显式标注，并改用「每次权重读取产出的 token 数」衡量。
+    _spec = _baseline_is_speculative(cfg, baseline)
     achieved_bw = wb / step_s                        # B/s
     bw_util = achieved_bw / bw_peak
     kv_peak = kv_cache_bytes(cfg.model, a["max_ctx_native"], *cfg.kv_bits())
@@ -207,8 +233,19 @@ def profile_replay(cfg: PerfConfig, baseline: dict) -> dict:
         "decode_step_ms": round(step_ms, 3),
         "theoretical_upper_bound_tps": round(bw_peak / wb, 2),
         "gap_vs_upper_bound_pct": round((1 - native / (bw_peak / wb)) * 100, 2),
-        "verdict": "bandwidth_saturated" if bw_util > 0.75 else "bandwidth_underused",
+        "verdict": ("speculative_metric_invalid" if _spec else
+                    ("bandwidth_saturated" if bw_util > 0.75
+                     else "bandwidth_underused")),
+        "speculative": _spec,
     }
+    if _spec:
+        hw["metric_note"] = (
+            "**本配置的基线含投机解码，达成带宽口径失效**："
+            f"权重 {wb/1e9:.1f} GB ÷ 单步 {step_ms:.2f} ms = "
+            f"{achieved_bw/1e9:.0f} GB/s（标称的 {bw_util*100:.0f}%），"
+            "超过物理带宽是正常的 —— 一次权重读取产出了 mean_len 个 token。"
+            "正确的效率指标是「每次权重读取产出的 token 数」（= mean_len），"
+            "不是带宽达成率。无投机时的对照见报告的基线章节。")
     # 算力侧：只报带宽无法回答「算力是否也饱和了」。
     # 用 roofline 的语义给出「该强度下可达算力」，才能说明
     # 「算力利用率低」是缺陷还是带宽限死的必然结果。

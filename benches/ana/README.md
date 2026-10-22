@@ -63,6 +63,7 @@ flowchart TB
 ```bash
 # ① 框架自检（推荐先跑，确认公式与参考配置都正常；无需 GPU）
 python3 scripts/selftest.py
+python3 scripts/audit_reports.py      # 报告一致性审计（也可 make audit）
 
 # ② 采集环境画像（可选但推荐）
 ./scripts/collect_env.sh
@@ -185,7 +186,23 @@ ana/
 是均值还是峰值。台账未记命令时框架会按场景参数重建一条并标注  
 `reconstructed`，绝不把重建命令伪装成原始记录。
 
----
+### 4.1 口径一致性：三条硬规则（`scripts/audit_reports.py` 自动检查）
+
+报告里的同一个指标会在五个地方出现：台账 → baseline.json → optimize.json →
+verify.json → report.md → charts.html。任何一处口径不同，都会让报告自相矛盾。
+三条规则，任一违反都会被审计脚本判 FAIL：
+
+| 规则 | 检查项 | 本项目踩过的坑 |
+|:---|:---|:---|
+| **同会话** | C1 图表基线柱 == §5.1 的 before | 图表取台账 `baseline_native`（上一会话 92.65）、候选取本轮 measured（91.56），得出「优化后变慢」的假象；同配置跨会话实测差 **10.7%** |
+| **场景绑定** | C3 verify before == 台账对应场景 | CPU 的 `prefill_tps` 绑 `long_ctx_8k_kvq8`，却取到 `long_ctx_8k` 的扁平值 34.65（正确 11.48，**差 3×**） |
+| **口径失效要标注** | C5 投机配置必须出现「口径失效」 | 投机解码下一次权重读取产出多个 token，「t/s × 权重字节」算出的带宽会 >100%（本项目 153%），不能读作「突破物理带宽」 |
+
+```bash
+python3 scripts/audit_reports.py            # 全部运行
+python3 scripts/audit_reports.py --run <id> # 单个
+make audit                                  # 同上
+```
 
 ## 5. 复用方式（换模型 / 换硬件 / 换任务）
 
@@ -211,14 +228,20 @@ python3 -m perfkit all --config configs/my-project --run new-run
 **流程代码零改动**。唯一需要改代码的场景是新增**瓶颈判定规则**  
 （`perfkit/commands/diagnose.py` 的 `RULES`）或新增**报告章节**。
 
-**两套参考配置并存且互不干扰**（同一套流程代码，只换 YAML）：
+**五套参考配置并存且互不干扰**（同一套流程代码，只换 YAML）：
 
 | 配置目录                              | 硬件后端       | 模型           | 演示的重点                       |
 | :-------------------------------- | :--------- | :----------- | :-------------------------- |
 | `configs/`                        | NVIDIA GPU | Qwen3.8-27B  | 主示例：显存墙、KV 量化、并发            |
+| `configs/qwen3.8-27b-multimodal/` | NVIDIA GPU | Qwen3.8-27B + mmproj | **多模态专项**：图像 token 杠杆、两段 TTFT、分辨率—质量曲线 |
+| `configs/qwen3.8-27b-multimodal-uplimit/` | NVIDIA GPU | Qwen3.8-27B + mmproj | **多模态极限**：草稿深度拐点、步耗时模型、上限推导 |
+| `configs/qwen3.8-27b-multimodal-newarch/` | NVIDIA GPU | Qwen3.8-27B + mmproj | **150 t/s 可达性**：步耗时三项分解、位宽—质量曲线、目标反解 |
 | `configs/qwen2.5-1.5b-cpu/`       | x86 CPU    | Qwen2.5-1.5B | **CPU 可用性**：线程缩放、负载敏感性、深度衰减 |
 
 ```bash
+python3 -m perfkit all --config configs/qwen3.8-27b-multimodal --run qwen3.8-27b-decode-multi-mode-opt
+python3 -m perfkit all --config configs/qwen3.8-27b-multimodal-uplimit --run qwen3.8-27b-decode-multi-mode-uplimit-opt
+python3 -m perfkit all --config configs/qwen3.8-27b-multimodal-newarch --run qwen3.8-27b-decode-new-arch-opt
 python3 -m perfkit all --config configs/qwen2.5-1.5b-cpu --run qwen2.5-1.5b-cpu
 python3 -m perfkit query --runs qwen2.5-1.5b-cpu,qwen3.8-27b-decode-opt
 ```
@@ -230,7 +253,9 @@ python3 -m perfkit query --runs qwen2.5-1.5b-cpu,qwen3.8-27b-decode-opt
 ## 6. 本次示例运行的结论摘要
 
 > 模型 Qwen3.8-27B (Q4_K_M) @ RTX 4090 D / llama.cpp CUDA `547208d`。  
-> 完整报告见 `output/qwen3.8-27b-decode-opt/report.md`。
+> 完整报告见 `output/qwen3.8-27b-decode-opt/report.md`。  
+> **五轮迭代的总览索引见 [`output/README.md`](output/README.md)** ——
+> 它把「纯文本 → 多模态 → 极限 → 150 t/s 可达性」的结论链串在一起。
 
 | 项 | 结果 |
 | :--- | :--- |
@@ -261,6 +286,130 @@ python3 -m perfkit query --runs qwen2.5-1.5b-cpu,qwen3.8-27b-decode-opt
 这是**混合架构**（16 层全注意力 + 48 层 SSM），KV 被高估 4× ——
 这正是历史报告里「几何 6.50 GiB vs 实测 2.20 GiB（2.95×）」的根因。
 用 GGUF 真值重算为 1.63 GiB，与实测显存差（2.17 GiB）在 8% 内吻合。
+
+### 多模态专项（Qwen3.8-27B + mmproj @ RTX 4090）
+
+> 基线 = 上一份报告的 B6_mmproj（挂上视觉投影后的最终效果）。
+> 完整报告见 `output/report_qwen3.8-27b-decode-multi-mode-opt.md`。
+
+| 项 | 基线 | 优化后 |
+| :--- | :--- | :--- |
+| 单流 Decode | 48.88 t/s | **92.65 t/s（+89.6%）** |
+| 28K 上下文 Decode | 39.25 | **67.12（+71.0%）** |
+| 1024px 视觉 Decode | 47.72 | **96.13（+101.5%）** |
+| 2048px 视觉 Decode | 47.08 | **90.10（+91.4%）** |
+| 双路带图系统吞吐 | 32.60 | **70.15（+115%）** |
+| 1024px 视觉 TTFT | 885 ms | 969 ms（限分辨率后略升，但 2048px 从 3.5 s → 1.0 s） |
+| 峰值显存 | 19,085 MiB（加 MTP 后 21,505，**已越线**） | **20,452 MiB（余量 4.02 GiB）** |
+| 视觉简单题 | 8/8 | 8/8 |
+| 视觉难题 | 5/7 | **6/7** |
+| 24K 精确检索 | 3/3 | 3/3 |
+
+**三条多模态特有的结论**：
+
+1. **TTFT 的大头不是 ViT**：1024px 时 ViT 约 405 ms，而 1024 个图像 token 的
+   文本侧 prefill 约 300 ms；2048px 时 ViT 800 ms、文本侧 2700 ms。
+   压 TTFT 的第一杠杆是 `--image-max-tokens`，不是优化视觉编码器。
+2. **图像 token 数 = (边长/32)²**：2048px 图的代价是 1024px 的 4 倍。
+   不设上限等于把显存与延迟的控制权交给用户。
+3. **峰值点会换位置**：纯文本看最长文本；多模态要同时看「最大图」与
+   「长文本 + 图并发」。只用文本压测判断预算会低估约 1.6 GiB。
+
+**一个必须写清的约束**：`--parallel 2` 时 64K 是**总**上下文，每槽只有 32K ——
+单请求超过 32,768 token 会被 400 拒绝（已实测复现）。
+需要真 64K 单请求时用 `B10_final_p1`（`--parallel 1`，实测可处理 53,178 token）。
+
+### 多模态极限性能（Qwen3.8-27B + mmproj，以 B9_final 为基线）
+
+> 完整报告见 `output/report_qwen3.8-27b-decode-multi-mode-uplimit-opt.md`。
+
+| 项 | B9_final（同会话） | 极限配置 | 变化 |
+| :--- | ---: | ---: | ---: |
+| 短对话 Decode | 83.66 t/s | **91.56** | +9.4% |
+| 1024px 视觉 Decode | 93.82 | **100.08**（重复型输出 121.24） | +6.7% |
+| 2048px 视觉 Decode | 95.55 | **99.78** | +4.4% |
+| 视觉 TTFT | 873.3 ms | **858.4** | -1.7% |
+| 视觉难题 | 6/7 | **7/7** | +1 |
+| 峰值显存 | 19,969 MiB | **19,857**（余量 4.60 GiB） | -112 |
+| 单请求上下文 | 32,768 | **65,536** | ×2 |
+| 28K Decode | 69.97 | 64.97 | -7.1%（方差大，区间重叠） |
+| 双路并发（受控 A/B） | 42.97 | 38.39 | -10.7% |
+
+**三条极限结论**：
+
+1. **Decode 速率 = mean_len ÷ 步耗时**，两个因子反向运动。
+   步耗时随 `--spec-draft-n-max` 线性增长（每多一个草稿约 +3.4 ms），
+   而 mean_len 在 n-max=4 后饱和 —— **n-max=4 是顶点**，
+   n-max=5/8 反而更慢（84.6 / 69.8 t/s）。
+2. **读一遍权重的下界是 18.2 ms**（纯读带宽 883 GB/s ÷ 15 GiB），
+   无投机时已达 89%。再快只能靠「一次读多个 token」，
+   而每个额外 token 都要付验证成本 —— 这是 4090 单卡的物理上限。
+3. **输出速率不是常数**：同一配置同一张图，只换提问文本，
+   Decode 中位从 102 到 121 t/s（重复型输出最高）。
+   任何「多模态上限」都必须绑定内容类型。
+
+**一个被修正的旧结论**：上一轮把「图 + 20K 文本」的失败归因为
+「模型能力边界」。本轮发现根因是 `--image-max-tokens` 过大导致注意力
+被图片吸走 —— cap 768 时 3/3 正确，cap 1024/1280 时 0/3。
+
+### 150 t/s 可达性（Qwen3.8-27B + mmproj，以 U3_final 为基线）
+
+> 完整报告见 `output/report_qwen3.8-27b-decode-new-arch-opt.md`。
+
+**问题**：多模态 Decode 能不能到 150 tokens/s？
+**答案**：能，但代价不可接受。
+
+| 档位 | 权重 | 视觉 Decode | PPL | PPL 劣化 | 判定 |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| Q4_K_M（交付） | 15.0 GiB | 121.1 t/s | 5.8229 | — | ✅ |
+| Q3_K_M | 12.6 GiB | 115.8 | 6.0910 | +4.6% | ❌ 超红线 2.3× |
+| MIX 3.8 BPW | 12.1 GiB | 133.5 | 6.5336 | +12.2% | ❌ 超红线 6.1× |
+| Q2_K | 10.1 GiB | **157.2** | 7.1710 | +23.1% | ❌ 超红线 11.6× |
+
+**步耗时三项分解**（本轮的核心推导）：
+
+```text
+步耗时 = 权重读取 + 固定开销 + 验证成本
+       = 18.2 ms  + 2.3 ms  + 11.9 ms = 32.4 ms（实测 32.42）
+```
+
+后两项与位宽无关，所以 150 t/s 只能靠压第一项：
+`26.7 − 11.9 − 2.3 = 12.5 ms` → 权重 ≤ 11 GB（≈3.2 BPW）。
+
+**三条新知识**：
+
+1. **150 t/s 是权重体积问题，不是调参问题** —— 前几轮已把草稿深度、
+   并发、batch、cap、KV 精度都推到拐点。
+2. **质量代价随位宽超线性增长**：-18% 体积 → +4.6% PPL；-34% → +23.1%。
+   吞吐线性受益、质量超线性受损，交点就在 Q4_K_M。
+3. **提高草稿精度是负收益**：Q8 draft 让接受率 0.52→0.55，
+   但每步多读 1.8 GB，净效果 -17%。
+
+**一个必须点明的口径混淆**：Q2_K 那行用的是 cap 512（256 token），
+Q4/Q3/MIX 用 cap 768（729 token）。同 cap 512 的干净对照显示
+降位宽的步耗时收益是 3.4 ms（纯读模型预测 6.4 ms）——
+**Q2_K 的 157 t/s 里约一半来自 mean_len 从 3.26 升到 3.98**。
+
+### 关于图表的一个已知陷阱（已修）
+
+`charts.html` 的「Decode 吞吐：理论上界 vs 基线 vs 候选方案」曾有两个会误导的口径问题：
+
+1. **基线与候选来自不同会话**：图上的「优化基线」取自台账 `baseline_native`，
+   而候选取 bundle 的 `measured` —— 当两者跨会话时（实测差 10.7%），
+   会得出「优化后反而变慢」的假象。
+2. **扁平值 vs 场景值**：CPU 配置的 `measured.decode_tps` 是 depth=8192 的 7.22，
+   而 KPI 绑定的 `short_chat` 是 17.54，差 2.4×。
+
+**现在的取值规则**（与报告 §5.1 完全一致）：
+
+```text
+基线 bundle：by_scenario[KPI 绑定场景] > measured.decode_tps > 台账 native
+候选 bundle：by_scenario[KPI 绑定场景] > measured.decode_tps > 模型估算
+若基线 bundle 与台账 native 相差 >2% → 两根都画，各自标注口径
+```
+
+另外图上有两条固定注释：副标题说明「理论上界是非投机口径」（MTP 下实测可合法超过它），
+脚注说明「各柱采样批次不同，差异 <±10% 时不应据此排序」。
 
 ### CPU 可用性验证（Qwen2.5-1.5B @ i7-4770HQ）
 

@@ -1,0 +1,690 @@
+# ============================================================================
+# 优化方案库（Optimization Plan Library）· 对应工程闭环第 4 步「优化实施」
+# ----------------------------------------------------------------------------
+# 每个条目是一张「可执行卡片」：改什么、期望收益、代价、风险、如何回滚。
+# `perfkit optimize` 会读取 diagnose.json 的瓶颈结论，按 applicable_when
+# 条件筛选出候选方案并排序，产出 optimize.json 与可直接运行的启动命令。
+#
+# 收益口径：gain.decode_tps 为「相对基线的 Decode 吞吐倍数」，
+# 来源标注同 model 配置：[M] 实测 / [L] 文献经验值 / [D] 推导。
+#
+# 本文件的所有实测收益来自 2026-10-18 的 RTX 4090 D 真机矩阵
+# （llama-bench + llama-server，原始数据见 ledger.json 与报告 §2/§5）。
+# ============================================================================
+
+plans:
+  # ---------------------------------------------------------------- 量化类
+  - id: quant_q4km_ud
+    name: UD 动态量化主模型（Q4_K_M + 首末层升精度）
+    category: quantization
+    layer: model
+    applicable_when: [memory_bound, always]
+    gain: {decode_tps: 1.00, vram_gib: -1.20, ppl_delta_pct: 0.0}
+    source: "[M] 本部署基准档位（有效权重 14.997 GiB / 26.90B 参数）"
+    cost: 需重新量化或下载（~16GB），一次性成本
+    risk: 低。**PPL 已实测**：Q4_K_M 5.8216 vs Q6_K 5.8059（+0.27%），远低于 2% 红线（WikiText-2，40 chunks）
+    how: 使用 unsloth 动态量化产物，FFN 混用 IQ4_XS/Q4_K/Q3_K，注意力头升精度到 Q5_K/Q6_K
+    rollback: 换回 F16（不可行，24GB 装不下）或 Q5_K_M
+
+  - id: quant_q5km
+    name: 升档到 Q5_K_M（精度换速度的反向权衡）
+    category: quantization
+    layer: model
+    applicable_when: [ppl_regression]
+    gain: {decode_tps: 0.89, vram_gib: 3.27, ppl_delta_pct: -0.6}
+    source: "[D] 由 bytes 比例 19.77/16.46 反推带宽受限下的速率比"
+    cost: 显存 +3.27GiB，Decode 速率按带宽比例下降约 11%
+    risk: 低
+    how: 替换主模型 gguf 文件
+    rollback: 换回 Q4_K_M
+
+  # ------------------------------------------------------------ 投机解码类
+  - id: spec_mtp
+    name: MTP 投机解码（Multi-Token Prediction）
+    category: speculative
+    layer: runtime
+    applicable_when: [memory_bound, decode_latency]
+    gain: {decode_tps: 1.77, vram_gib: 1.28, ttft_ms: 0.10}
+    source: >
+      [M] 单流 49.21 → 87.27 t/s（+77.3%）；32K 上下文 44.12 → 65.16 t/s（+47.7%）；
+      接受率实测 0.371~0.510，平均接受长度 2.10~2.52
+    cost: 显存 +1.28GiB；Draft 必须全层卸载（-ngld 99），否则走 CPU 反而更慢
+    risk: >
+      中。接受率强依赖任务类型（代码/结构化输出高，自由创作低）；
+      温度采样下接受率下降。**注意**：旧报告称「多槽位并发时建议关闭 MTP」，
+      本次实测不成立 —— MTP + 双槽位 112.95 t/s，明显高于关 MTP 的 65.57 t/s。
+    how: -md mtp-*.gguf --spec-type draft-mtp -ngld 99
+    rollback: 去掉 -md / --spec-type 参数即可，无副作用
+
+  - id: spec_ngram
+    name: n-gram / 检索式草稿（零显存代价投机）
+    category: speculative
+    not_selected_reason: "MTP 已提供 1.77× 的投机收益且接受率可测（0.37~0.51）；n-gram 的收益（1.15×）明显更低，且接受率对自由生成可能 <10%。两者叠加无意义（都靠减少读取次数）"
+    layer: runtime
+    applicable_when: [memory_bound, zero_vram_budget]
+    gain: {decode_tps: 1.15, vram_gib: 0.0}
+    source: "[L] 摘要/改写/代码补全类任务接受率可达 30~60%"
+    cost: 无显存代价，纯 CPU 侧开销
+    risk: >
+      高。自由生成场景接受率可能 <10%，反而因验证开销拖慢；
+      仅适用于输出与输入高度重叠的任务（摘要、翻译、代码编辑）。
+    how: 启用 n-gram 草稿，需实测接受率后再决定是否保留
+    rollback: 关闭开关
+
+  # --------------------------------------------------------------- KV 类
+  - id: kv_mixed_q8q4
+    name: KV Cache 混合量化（K=q8_0 / V=q4_0）
+    category: kv_cache
+    layer: runtime
+    applicable_when: [long_context, memory_bound, kv_cache_pressure]
+    gain: {decode_tps: 0.88, vram_gib: -0.65, kv_cache_gib: -0.65}
+    source: >
+      [M] 同深度（32K）单流对照：f16 45.37 → q8q4 39.45 t/s（-13.0%）；
+      显存对照：f16 19,683 MiB → q8q4 17,463 MiB（-2,220 MiB，含 2 槽位）
+    cost: >
+      **速度有代价，不是免费的**：本构建的 CUDA FlashAttention 没有
+      q8_0-q4_0 的向量化 kernel，启动日志明确警告
+      「no FlashAttention vector kernel compiled for K/V types q8_0-q4_0,
+      converting K and V to f16 instead (slow)」，因此每次注意力都要先转 f16。
+    risk: >
+      中。K 保 q8_0 是刻意的：Key 决定注意力检索精度，Value 对精度更鲁棒。
+      但要注意 q8q4 恰好是唯一没有 FA 向量 kernel 的组合 ——
+      若长上下文单流吞吐是硬指标，应改用 q8_0/q8_0（+0.65 GiB 显存，速度回到 44.69）。
+    how: --cache-type-k q8_0 --cache-type-v q4_0
+    rollback: 改回 --cache-type-k f16 --cache-type-v f16（显存 +2.2 GiB，MTP+双槽位下会超限）
+
+  - id: kv_q8q8
+    name: KV Cache 对称 q8_0（本构建的甜点档）
+    category: kv_cache
+    not_selected_reason: "实测单流 92.60 t/s 略高于 q8q4 的 87.27，长上下文单流也更快（62.41 vs 65.16 接近）；但显存 20,383 MiB 使余量降到 4.08 GiB，**贴近 4.0 GiB 硬约束**。本次选 q8q4 是为了留出抗峰值的余量；若只跑单流、不追求并发，q8q8 是更优选择"
+    layer: runtime
+    applicable_when: [long_context, memory_bound, kv_cache_pressure]
+    gain: {decode_tps: 0.985, vram_gib: -1.0, kv_cache_gib: -1.0}
+    source: >
+      [M] 同深度（32K）单流对照：f16 45.37 → q8_0/q8_0 44.69 t/s（-1.5%）；
+      显存对照：MTP+双槽位下 q8q8 20,383 MiB vs q8q4 19,871 MiB
+    cost: 显存比 q8q4 多 0.65 GiB
+    risk: >
+      低。**这是本构建下唯一「省显存且几乎不掉速」的 KV 档位** ——
+      q8_0/q8_0 有原生 FA 向量 kernel，不需要转换。
+      代价是显存余量从 4.58 GiB 降到 4.08 GiB，贴近 4.0 GiB 的硬约束。
+    how: --cache-type-k q8_0 --cache-type-v q8_0
+    rollback: 改回 q8_0/q4_0
+
+  - id: kv_q4q4
+    name: KV Cache 全 q4_0（激进档）
+    category: kv_cache
+    not_selected_reason: "32K 单流实测 44.75 t/s（与 f16 的 45.37 几乎相同），但 K 也降到 q4_0 会直接损伤注意力检索精度 —— 收益为零、风险最高，无采用理由"
+    layer: runtime
+    applicable_when: [kv_pressure, extreme_memory]
+    gain: {decode_tps: 0.986, vram_gib: -1.3}
+    source: "[M] 同深度（32K）单流：44.75 t/s（与 f16 的 45.37 差 1.4%）；相对 F16 节省 75%"
+    cost: 精度损失集中体现在长上下文检索与 needle-in-haystack
+    risk: 高。32K 以上可能出现「答非所问」「忽略中段信息」
+    how: --cache-type-k q4_0 --cache-type-v q4_0
+    rollback: 回到 q8_0/q4_0
+
+  # -------------------------------------------------------------- 内核类
+  - id: kernel_flash_attn
+    name: Flash Attention 在线注意力
+    category: kernel
+    layer: kernel
+    applicable_when: [prefill_bound, long_context, memory_bound]
+    gain: {prefill_tps: 1.11, vram_gib: -0.80}
+    source: >
+      [M] 同配置 on/off 对照：Prefill 3064.7 → 2765.5 t/s（+10.8%）；
+      Decode 50.52 → 50.37 t/s（持平）。64K 下避免 O(N²) 注意力矩阵落显存
+    cost: 无（近似算法，但误差在可接受范围）
+    risk: >
+      低。注意新版 llama.cpp 必须写 --flash-attn on 而非裸 --flash-attn。
+      **量化 KV 的 kernel 覆盖不完整**：q8_0-q4_0 会回退到 f16 转换（见 kv_mixed_q8q4）
+    how: --flash-attn on
+    rollback: --flash-attn off
+
+  - id: kernel_fa_quants_rebuild
+    name: 重编译 FlashAttention 量化 kernel（补 q8_0-q4_0）
+    category: kernel
+    not_selected_reason: "本次未执行重编译（需要重新构建 30 分钟），已列为 P0 后续项；它的收益（+12%）只在 q8q4 配置上成立，而 q8q8 已能达到相近吞吐"
+    layer: kernel
+    applicable_when: [long_context, kv_cache_pressure]
+    gain: {decode_tps: 1.12}
+    source: >
+      [D] 由「q8q4 32K 单流 39.45 vs f16 45.37（-13.0%）」反推：
+      消除转换开销即可回收这部分损失
+    cost: 需重新编译 llama.cpp（GGML_CUDA_FA_QUANTS 环境变量），不改代码
+    risk: 低。纯编译开关；需验证编译产物在 32K 上下文下数值一致
+    how: >
+      GGML_CUDA_FA_QUANTS=q8_0-q4_0（及需要的其它组合）重新 cmake --build；
+      启动日志应不再出现 "no FlashAttention vector kernel compiled"
+    rollback: 用回旧构建
+
+  - id: kernel_cuda_graph
+    name: CUDA Graph 捕获（消除 Kernel Launch 开销）
+    category: kernel
+    not_selected_reason: "本构建的 CUDA Graph 默认已启用（日志 graphs reused 稳定增长、realloc=0），因此没有额外可捕获的空间；收益估算 1.05× 已包含在现有基线里"
+    layer: kernel
+    applicable_when: [launch_bound, decode_latency]
+    gain: {decode_tps: 1.05}
+    source: "[D] 64 层 × ~10 kernel ≈ 640 次 launch，按 3~5µs/次计 ≈ 2~3ms/step"
+    cost: 需固定 batch/ctx 形状，与动态 shape 冲突
+    risk: >
+      中。llama.cpp 的 CUDA Graph 对 slot 数量与 batch 形状敏感；
+      开启后长上下文场景可能因图重捕获抖动。本次构建的日志显示
+      graphs reused 稳定增长（无 realloc），说明图复用已生效。
+    how: 编译期开启 GGML_CUDA_GRAPHS，运行时配合 --parallel 固定槽位
+    rollback: 关闭编译开关
+
+  - id: kernel_fused_qkv
+    name: QKV 融合 + FFN 门控融合
+    category: kernel
+    not_selected_reason: "收益上限 1.02×、需改 ggml 图构建代码 —— 改动成本远大于收益，在带宽已榨干 92.9% 的前提下优先级最低"
+    layer: kernel
+    applicable_when: [memory_bound]
+    gain: {decode_tps: 1.02}
+    source: "[L] 减少中间张量往返显存，Decode 阶段收益有限（权重读取占主导）"
+    cost: 需改 ggml 图构建代码
+    risk: 中。收益小、改动大，性价比最低，建议最后考虑
+    how: 在 ggml 图构建阶段合并 QKV 权重为单个 tensor
+    rollback: 还原图构建
+
+  # ------------------------------------------------------------ 并发/调度类
+  - id: sched_parallel2
+    name: 双槽位并发（--parallel 2）
+    category: scheduling
+    layer: runtime
+    applicable_when: [throughput_bound, multi_user]
+    gain: {decode_tps_system: 4.88, decode_tps: 0.99}
+    source: >
+      [M] 系统吞吐 23.14（基线单槽位串行）→ 112.95 t/s；
+      人均 69.0 t/s（MTP 配置）
+    cost: 单槽上下文减半（64K 总量 → 每槽 32K）
+    risk: 低。需同步把客户端 Context Length 调成与服务端一致，否则 400 报错
+    how: --parallel 2 --ctx-size 65536（单槽 32K）
+    rollback: --parallel 1
+
+  - id: sched_batch_tune
+    name: batch/ubatch 调优
+    category: scheduling
+    layer: runtime
+    applicable_when: [prefill_bound, throughput_bound]
+    gain: {prefill_tps: 1.00}
+    source: >
+      [M] 实测无差异：b=1024/2048/4096 在 8K prompt 下 Prefill 3054/3046/3041 t/s，
+      Decode 50.54/50.58/50.57 t/s —— 4090 上 1024/512 已是甜点区
+    cost: 显存随 ubatch 线性增长
+    risk: 低。**本项已无可争取收益**，保留在方案库中是为了避免重复调参
+    how: --batch-size 1024 --ubatch-size 512（默认即可）
+    rollback: 恢复默认
+
+  # ------------------------------------------------------- 端侧专属方案
+  - id: ondevice_weight_streaming
+    name: 逐层权重 Streaming（大模型跑小内存设备）
+    category: ondevice
+    layer: runtime
+    applicable_when: [on_device, weight_exceeds_ram]
+    gain: {decode_tps: 0.15}
+    source: "[D] 27B 权重远超常见端侧设备内存，必须按层流式加载，速度受存储 IO 限制"
+    cost: 需要高速存储（UFS 4.0 读 ~4GB/s），每 token 需读 15GiB
+    risk: >
+      高。理论速率 ≈ 4GB/s ÷ 15.33GiB ≈ 0.26 t/s，不可接受。
+      端侧跑 27B 必须改用更激进的 2-bit 量化 + 模型剪裁，或改端云协同。
+    how: mmap + MADV_WILLNEED 预取 + 逐层加载
+    rollback: 降级到 3B/7B 模型
+
+  - id: ondevice_npu_offload
+    name: NPU 卸载边界判定（端侧专属）
+    category: ondevice
+    layer: hardware
+    applicable_when: [on_device, npu_available]
+    gain: {decode_tps: null, power_w: -0.35}
+    source: "[L] NPU 能效比 GPU 高 3~5×，但算子覆盖与动态 shape 支持是硬约束"
+    cost: 图分区 + CPU fallback 引入同步开销
+    risk: >
+      高。多数移动 NPU 只吃 INT8/INT16 定点，对 27B 的 Q4_K_M 权重无原生支持，
+      需要离线重编译 + 算子替换。混合架构（SSM 层）在移动 NPU 上的算子覆盖
+      尤其不确定。收益不确定，需先做算子覆盖率扫描。
+    how: 先用 QNN/RKNN/Core ML 工具链跑算子支持矩阵扫描，再决定分区边界
+    rollback: 全量回退 CPU/GPU 后端
+
+# ---- 优化基线（Optimization Baseline）--------------------------------------
+# 术语约定：本框架中「基线」= 可用的朴素生产配置（全层 GPU 卸载 + FA + 64K ctx +
+# 单槽位 + F16 KV + 无投机解码），而非「优化后配置的子集」。
+# 这样每一项优化都有独立的可归因收益，也避免了「预支优化收益」导致的重复计数。
+
+  # ------------------------------------------------- 多模态专项（本任务新增）
+  - id: mmproj_quant_q8
+    name: 视觉投影量化 F16 → Q8_0
+    category: quantization
+    layer: model
+    applicable_when: [memory_bound, vision_enabled, always]
+    gain: {vram_gib: -0.28, decode_tps: 1.0, quality_delta: 0.0}
+    source: >
+      [M] 文件 927,607,488 B → 625,708,608 B（-288 MiB）；8 项视觉题 8/8、
+      7 项难题 6/7，与 F16 完全一致；PPL 与视觉路径无关（不走文本头）。
+    cost: 一次性 llama-quantize，约 5.5 s
+    risk: 低。mmproj 只做视觉特征投影，Q8_0 的精度损失在 8 位下不可测。
+    how: llama-quantize mmproj-F16.gguf mmproj-Q8_0.gguf Q8_0
+    rollback: 换回 mmproj-F16.gguf（显存 +288 MiB）
+
+  - id: mm_image_cap
+    name: 图像 token 上限（--image-max-tokens 1024）
+    category: multimodal
+    layer: runtime
+    applicable_when: [vision_enabled, decode_latency, memory_bound]
+    gain: {vis_ttft_ms: -0.32, vram_gib: -0.6, quality_delta: 0.0}
+    source: >
+      [M] 不限分辨率时 2048px 图占 4096 token、TTFT 3.55 s；
+      限 1024 后同图占 1024 token、TTFT 1.01 s（-71%）。
+      质量：1024 与 768 均 6/7，512 降到 5/7。
+    cost: 超过 1024px 的图会降采样，细小文字可能丢失
+    risk: 中。文档 OCR 场景需评估；本次 1600px 密集表格在 cap=1024 下仍 3/3。
+    how: --image-max-tokens 1024
+    rollback: 去掉该参数（TTFT 与显存回到基线水平）
+
+  - id: mm_mtmd_batch
+    name: 视觉编码 batch 上限（--mtmd-batch-max-tokens 256）
+    category: multimodal
+    layer: runtime
+    applicable_when: [vision_enabled, memory_bound]
+    gain: {vram_gib: -0.05, decode_tps: 1.0}
+    source: "[M] 双槽并发带图时峰值 20,199 → 20,151 MiB（-48 MiB）"
+    cost: 大图分更多批编码，ViT 阶段略慢（<5%）
+    risk: 低
+    how: --mtmd-batch-max-tokens 256
+    rollback: 去掉该参数（默认 1024）
+
+  - id: spec_draft_nmax2
+    name: 草稿数收到 2（--spec-draft-n-max 2）
+    category: speculative
+    layer: runtime
+    applicable_when: [memory_bound, decode_latency]
+    gain: {vram_gib: -0.67, decode_tps: 0.97}
+    source: >
+      [M] 同配置仅改 n-max（q8q4 + draft q4 + cap 1024 + mtmd 512 + b1024）：
+      n-max=3 峰值 20,662 MiB → n-max=2 峰值 19,971 MiB（**-691 MiB**）。
+      吞吐：单流 92.65 t/s、28K 67.12 t/s，与 n-max=3 的 91.5 / 67.6 持平。
+      注意显存单次测量的噪声底约 ±0.5 GiB，该差值略高于噪声底。
+    cost: 平均接受长度从 ~2.5 降到 ~2.2
+    risk: 低。接受率在 n-max=2 时更高（0.63 vs 0.45），因为短提案更容易被接受。
+    how: --spec-draft-n-max 2
+    rollback: 去掉该参数（默认 3，显存 +约 0.4 GiB）
+
+  - id: spec_draft_kv_q4
+    name: 草稿模型 KV 量化（--spec-draft-type-k/v q4_0）
+    category: kv_cache
+    layer: runtime
+    applicable_when: [memory_bound, decode_latency]
+    gain: {vram_gib: -0.47, decode_tps: 1.0}
+    source: "[M] 峰值 20,662 → 19,971 MiB（-691 MiB，含 n-max 变化）；接受率 0.63 不变"
+    cost: 草稿 KV 精度下降；但草稿只提案，最终由主模型验证
+    risk: 低
+    how: --spec-draft-type-k q4_0 --spec-draft-type-v q4_0
+    rollback: 去掉该参数（默认 f16，显存 +0.47 GiB）
+
+  - id: kv_q4q4_fa
+    name: 主模型 KV 全 q4_0（利用原生 FA 向量 kernel）
+    category: kv_cache
+    layer: runtime
+    applicable_when: [memory_bound, long_context, vision_enabled]
+    gain: {decode_tps: 1.10, vram_gib: -0.50, ppl_delta_pct: 0.02}
+    source: >
+      [M] **同配置仅换 KV 精度**（mmproj-Q8 + MTP n-max 2 + draft q4_0 + p2/64K + cap 1024）：
+      28K Decode 中位 53.98 → 63.69 t/s（+18%）、2048px 视觉 Decode 89.98 → 93.51（+3.9%）、
+      峰值 20,463 → 19,951 MiB（**-512 MiB，与几何预测 512 MiB 完全一致**）。
+      PPL 5.8216 → 5.8229（+0.02%）；24K 检索 3/3；8 项视觉题 8/8。
+    cost: K 侧从 8.5 bit 降到 4.5 bit
+    risk: >
+      中。理论上 K 精度影响检索，但本次三组压力测试（24K 20 条同类码、
+      24K 5 针、8 项视觉题）均未检出差异。样本量小，长文档精确引用仍需灰度。
+    how: --cache-type-k q4_0 --cache-type-v q4_0
+    rollback: 改回 --cache-type-k q8_0（显存 +0.77 GiB，长上下文 Decode -7%）
+
+  - id: sched_batch_1024
+    name: batch/ubatch 固定 1024/512
+    category: scheduling
+    layer: runtime
+    applicable_when: [memory_bound, vision_enabled]
+    gain: {vram_gib: -0.03, prefill_tps: 1.0}
+    source: "[M] 默认 2048/512 与 1024/512 的 Prefill 一致（2,414 vs 2,435 t/s）；峰值低 48~100 MiB"
+    cost: 无
+    risk: 低
+    how: -b 1024 -ub 512
+    rollback: 去掉参数（回到默认 2048/512）
+
+
+  # --------------------------------------------- 极限性能专项（本轮新增）
+  - id: spec_depth_4
+    name: 草稿深度加深到 4（--spec-draft-n-max 4）
+    category: speculative
+    layer: runtime
+    applicable_when: [memory_bound, decode_latency, throughput_bound]
+    gain: {decode_tps: 1.10, vis_decode_tps: 1.28, vram_gib: 0.30}
+    source: >
+      [M] 同配置（p1 / cap768 / b1024）只改 n-max：
+      n-max=2 → 85.72 t/s（mean_len 2.31，步耗时 26.95 ms）
+      n-max=4 → 94.38 t/s（mean_len 3.06，步耗时 32.42 ms）
+      视觉：100.63 → 122.60 t/s（+21.8%）。
+    cost: 峰值显存 +306 MiB（19,545 → 19,851）；接受率从 0.656 降到 0.520
+    risk: >
+      中。n-max=4 是「mean_len 饱和」与「步耗时线性增长」的交点，
+      再加深即负收益（n-max=5 降到 84.55、n-max=8 降到 69.78）。
+      自由创作场景 mean_len 会掉到 2.0 附近，此时 n-max=4 反而比 2 慢。
+    how: --spec-draft-n-max 4
+    rollback: 去掉该参数（回到默认 3）或显式设 2
+
+  - id: sched_parallel1
+    name: 单槽位（--parallel 1）换满 64K 单请求上下文
+    category: scheduling
+    layer: runtime
+    applicable_when: [memory_bound, long_context]
+    gain: {decode_tps: 1.10, decode_tps_32k: 1.35, vram_gib: -0.66}
+    source: >
+      [M] 同配置仅换 parallel：p2 → p1 时
+      28K Decode 58.04 → 82.89 t/s（+43%）、峰值 20,535 → 19,851 MiB、
+      单请求上下文 32K → 64K。
+    cost: 双路并发系统吞吐 67.29 → 53.25 t/s（-21%）
+    risk: >
+      中。并发吞吐下降 21%；单槽下两路请求串行。若业务以并发为主，
+      应保留 p2 并接受 n-max 只能到 2（p2 + n-max 4 峰值 20,535 已越线）。
+    how: --parallel 1
+    rollback: 改回 --parallel 2
+
+  - id: mm_cap_768
+    name: 图像 token 上限降到 768（同时修注意力偏移）
+    category: multimodal
+    layer: runtime
+    applicable_when: [vision_enabled, decode_latency, memory_bound]
+    gain: {vis_ttft_ms: -0.11, vram_gib: -0.06, quality_delta: 0.14}
+    source: >
+      [M] cap 1024 → 768：ViT 467 → 347 ms、文本侧 prefill 1083 → 788 token、
+      TTFT 969.5 → 858.4 ms。
+      质量：cap 1024/1280 时「图 + 20K 文本」0/3 正确，cap 768 时 3/3 正确。
+    cost: 图像边长从 1024 缩到 864 px，小字可能模糊
+    risk: >
+      低-中。1600px 密集表在 cap 768 下仍 3/3；但极端小字号扫描件可能受影响。
+    how: --image-max-tokens 768
+    rollback: 改回 1024
+
+  - id: sched_b2048
+    name: batch 提到 2048（--batch-size 2048）
+    category: scheduling
+    layer: runtime
+    applicable_when: [long_context, throughput_bound]
+    gain: {decode_tps_32k: 1.12}
+    source: >
+      [M] 同配置（p1/n4/cap768）b1024 vs b2048：28K Decode
+      60.28 → 71.94 t/s（+19%）；峰值不变（19,851）。
+    cost: 无
+    risk: 低。ub 保持 512，因此 prefill 工作区不变。
+    how: -b 2048
+    rollback: 去掉该参数（默认 2048，显式写 1024 反而更慢）
+
+
+  # ------------------------------------- 新架构方向（本轮新增，均为「不可交付」候选）
+  - id: na_cap512
+    name: 图像 token 上限降到 512（256 token/图）
+    category: multimodal
+    layer: runtime
+    applicable_when: [vision_enabled, decode_latency]
+    gain: {vis_decode_tps: 1.30, vis_ttft_ms: -0.07, quality_delta: -0.14}
+    source: >
+      [M] Q4_K_M + cap 768→512：图像 token 729→256，每步 KV 读写 -65%。
+      但 vis_1024 在 Q4 上不稳定（113.56 vs 121.13），
+      在 Q2_K 上才显著（131.41→157.16，+20%）。
+      质量：难题 7/7 → 6/7（1600px 密集表或 1200px 网格丢细节）。
+    cost: 2048px 图的 Decode 反而下降（117.75→103.53），因为生成内容变短、mean_len 降低
+    risk: 高。只对「小图 + 重复型输出」有利，对文档 OCR 与 2048px 图有害。
+    how: --image-max-tokens 512
+    rollback: 改回 768
+
+  - id: na_width_q3
+    name: 主权重降到 Q3_K_M（13.5 GB）
+    category: quantization
+    layer: model
+    applicable_when: [memory_bound, throughput_bound]
+    gain: {decode_tps: 1.05, vram_gib: -2.9, ppl_delta_pct: 4.61}
+    source: >
+      [M] 同配置只换位宽：Q4_K_M（16.46 GB）→ Q3_K_M（13.50 GB）。
+      vis_1024 121.13 → 115.75（**未提速**）、vis_2048 99.23 → 114.02、
+      PPL 5.8229 → 6.0910（+4.61%）。
+    cost: 显存 -2.9 GiB；PPL 超 2% 红线 2.3 倍
+    risk: 高。体积只降 18%，步耗时几乎没变（32.42→33.42），
+      说明 Q3_K_M 的 block 结构与 Q4_K_M 在该层形状上效率相近。
+    how: 使用官方/第三方的 Q3_K_M 产物（**不自建**）
+    rollback: 换回 Q4_K_M
+
+  - id: na_width_q2
+    name: 主权重降到 Q2_K（10.86 GB）
+    category: quantization
+    layer: model
+    applicable_when: [throughput_bound, extreme_latency]
+    gain: {decode_tps: 1.72, vis_decode_tps: 1.30, vram_gib: -5.1, ppl_delta_pct: 23.15}
+    source: >
+      [M] Q2_K（10.86 GB）+ cap 512：步耗时 25.29 ms、mean_len 3.98、
+      纯文本 156.05 t/s、视觉 157.16 t/s —— **唯一能过 150 的组合**。
+      PPL 5.8229 → 7.1710（+23.15%）。
+    cost: 质量严重退化（PPL +23%，是 2% 红线的 11.6 倍）
+    risk: 极高。仅用于「证明 150 t/s 的代价」，**不可交付**。
+    how: 使用官方/第三方的 Q2_K 产物（**不自建**）
+    rollback: 换回 Q4_K_M
+
+  - id: na_draft_q8
+    name: MTP 草稿升到 Q8_0（3.16 GB）
+    category: speculative
+    layer: runtime
+    applicable_when: [decode_latency]
+    gain: {decode_tps: 0.85, vram_gib: 1.8}
+    source: >
+      [M] 同配置只换草稿精度：接受率 0.52 → 0.55（+6%），
+      但每步多读 1.8 GB（+2.1 ms），净效果 vis_1024 123.34 → 102.61（-17%）。
+    cost: 显存 +1.8 GiB、吞吐 -17%
+    risk: 高。**负收益**：草稿的价值在「小」不在「准」。
+    how: 使用官方/第三方的 Q8_0 草稿（**不自建**）
+    rollback: 换回 Q4_0 草稿
+
+optimization_baseline:
+  id: B0_uplimit
+  name: 上一轮最终（Q4_K_M + mmproj-Q8 + MTP n-max 4 + p1 + cap 768 + b2048）
+  plans: [quant_q4km_ud, kernel_flash_attn, spec_mtp, kv_q4q4_fa, mmproj_quant_q8,
+          mm_cap_768, mm_mtmd_batch, spec_depth_4, spec_draft_kv_q4,
+          sched_parallel1, sched_b2048]
+  startup_flags: [-ngl 99, "--mmproj {mmproj}", '-md "{draft}"',
+                  --spec-type draft-mtp, -ngld 99, --spec-draft-n-max 4,
+                  --spec-draft-type-k q4_0, --spec-draft-type-v q4_0,
+                  --parallel 1, --ctx-size 65536,
+                  --cache-type-k q4_0, --cache-type-v q4_0,
+                  --image-max-tokens 768, --mtmd-batch-max-tokens 256,
+                  -b 2048, -ub 512, "--flash-attn on"]
+  rationale: >
+    这是 report_qwen3.8-27b-decode-multi-mode-uplimit-opt.md §4.2 的选定配置，
+    也是本轮 150 t/s 目标的起点。它已经用尽了「调参」这一层：
+    草稿深度、并发策略、batch、图像 token、KV 精度都到了拐点。
+    本轮要问的是「再往前一步需要改什么物理量」。
+  measured:
+    decode_tps: 91.56
+    decode_tps_32k: 78.12
+    decode_tps_system: 53.25
+    vis_decode_tps: 100.08
+    vis_decode_tps_mixed: 121.13
+    vis_ttft_ms: 858.4
+    image_tokens_per_image: 729
+    step_ms: 32.42
+    mean_accepted_len: 3.97
+    mtp_accept_rate: 0.52
+    weight_gib: 14.997
+    quality_pass_rate: 1.0
+    hard_quality_pass_rate: 1.0
+    kv_retrieval_pass: 1.0
+    peak_vram_mib: 19857
+    safety_margin_gib: 4.60
+    ppl: 5.8229
+    gpu_util: 0.92
+    power_w: 377.24
+    temp_c: 71
+  source: "上一轮报告 §4.2（本地 raw 完整）+ 本轮同会话复测（vis_1024 121.13/123.34）"
+
+bundles:
+  - id: B0_uplimit
+    name: 上一轮最终（Q4_K_M / n-max 4 / p1 / cap 768）· 本轮仍选定
+    plans: [quant_q4km_ud, kernel_flash_attn, spec_mtp, kv_q4q4_fa, mmproj_quant_q8,
+            mm_cap_768, mm_mtmd_batch, spec_depth_4, spec_draft_kv_q4,
+            sched_parallel1, sched_b2048]
+    startup_flags: [-ngl 99, "--mmproj {mmproj}", '-md "{draft}"',
+                    --spec-type draft-mtp, -ngld 99, --spec-draft-n-max 4,
+                    --spec-draft-type-k q4_0, --spec-draft-type-v q4_0,
+                    --parallel 1, --ctx-size 65536,
+                    --cache-type-k q4_0, --cache-type-v q4_0,
+                    --image-max-tokens 768, --mtmd-batch-max-tokens 256,
+                    -b 2048, -ub 512, "--flash-attn on"]
+    expected: {decode_tps: 91.56, peak_vram_gib: 19.39}
+    measured:
+      decode_tps: 87.41
+      decode_tps_32k: 51.90
+      decode_tps_system: 53.25
+      vis_decode_tps: 121.13
+      vis_decode_tps_mixed: 121.13
+      vis_ttft_ms: 858.4
+      image_tokens_per_image: 729
+      step_ms: 32.42
+      mean_accepted_len: 3.97
+      mtp_accept_rate: 0.52
+      weight_gib: 14.997
+      quality_pass_rate: 1.0
+      hard_quality_pass_rate: 1.0
+      kv_retrieval_pass: 1.0
+      peak_vram_mib: 19857
+      safety_margin_gib: 4.60
+      ppl: 5.8229
+      gpu_util: 0.92
+      power_w: 377.24
+      temp_c: 71
+    measured_source: >
+      本轮同会话复测 NA_q4_n4（n=10/6）为主；X_q4_d4_n4（n=8）为二次对照
+      （short_chat 90.53、vis_1024 123.34）。上一轮 uplimit 会话的
+      FINAL1/FINAL2 中位（91.56 / 78.12 / 100.08）单列为 previous_round_decode_tps。
+      **28K 一项跨会话 CV 15.8%，51.90 与 78.12 都落在同一分布内，不应据此判定退化。**
+
+  - id: N1_cap512
+    name: 只压图像 token（cap 512）
+    plans: [quant_q4km_ud, kernel_flash_attn, spec_mtp, kv_q4q4_fa, mmproj_quant_q8,
+            na_cap512, mm_mtmd_batch, spec_depth_4, spec_draft_kv_q4,
+            sched_parallel1, sched_b2048]
+    startup_flags: [-ngl 99, "--mmproj {mmproj}", '-md "{draft}"',
+                    --spec-type draft-mtp, -ngld 99, --spec-draft-n-max 4,
+                    --spec-draft-type-k q4_0, --spec-draft-type-v q4_0,
+                    --parallel 1, --ctx-size 65536,
+                    --cache-type-k q4_0, --cache-type-v q4_0,
+                    --image-max-tokens 512, --mtmd-batch-max-tokens 256,
+                    -b 2048, -ub 512, "--flash-attn on"]
+    expected: {decode_tps: 103.41, vis_decode_tps: 113.56}
+    measured:
+      decode_tps: 103.41
+      vis_decode_tps: 113.56
+      vis_ttft_ms: 800.0
+      image_tokens_per_image: 256
+      quality_pass_rate: 1.0
+      hard_quality_pass_rate: 0.857
+      kv_retrieval_pass: 1.0
+      ppl: 5.8229
+      peak_vram_mib: 19809
+    measured_source: "会话日志转录（raw 未同步）：sweep_X_q4_d4_n4_cap512 + CAPA_512"
+
+  - id: N2_q3km
+    name: 主权重降到 Q3_K_M（13.5 GB）
+    plans: [na_width_q3, kernel_flash_attn, spec_mtp, kv_q4q4_fa, mmproj_quant_q8,
+            mm_cap_768, mm_mtmd_batch, spec_depth_4, spec_draft_kv_q4,
+            sched_parallel1, sched_b2048]
+    startup_flags: [-ngl 99, "--mmproj {mmproj}", '-md "{draft}"',
+                    --spec-type draft-mtp, -ngld 99, --spec-draft-n-max 4,
+                    --spec-draft-type-k q4_0, --spec-draft-type-v q4_0,
+                    --parallel 1, --ctx-size 65536,
+                    --cache-type-k q4_0, --cache-type-v q4_0,
+                    --image-max-tokens 768, --mtmd-batch-max-tokens 256,
+                    -b 2048, -ub 512, "--flash-attn on"]
+    expected: {decode_tps: 86.65, vis_decode_tps: 115.75}
+    measured:
+      decode_tps: 86.65
+      vis_decode_tps: 115.75
+      step_ms: 33.42
+      mean_accepted_len: 2.90
+      weight_gib: 12.57
+      ppl: 6.0910
+      quality_pass_rate: 1.0
+      hard_quality_pass_rate: 0.857
+      kv_retrieval_pass: 1.0
+      peak_vram_mib: 17183
+      safety_margin_gib: 7.20
+    measured_source: "会话日志转录（raw 未同步）：sweep_NA_q3_n4 + QCHK_Q3"
+
+  - id: N3_mix
+    name: 混合位宽 3.8 BPW（12.97 GB）+ cap 512
+    plans: [na_width_q2, na_cap512, spec_mtp, kv_q4q4_fa, mmproj_quant_q8,
+            mm_mtmd_batch, spec_depth_4, spec_draft_kv_q4, sched_parallel1, sched_b2048]
+    startup_flags: [-ngl 99, "--mmproj {mmproj}", '-md "{draft}"',
+                    --spec-type draft-mtp, -ngld 99, --spec-draft-n-max 5,
+                    --spec-draft-type-k q4_0, --spec-draft-type-v q4_0,
+                    --parallel 1, --ctx-size 65536,
+                    --cache-type-k q4_0, --cache-type-v q4_0,
+                    --image-max-tokens 512, --mtmd-batch-max-tokens 256,
+                    -b 2048, -ub 512, "--flash-attn on"]
+    expected: {decode_tps: 76.43, vis_decode_tps: 140.16}
+    measured:
+      decode_tps: 76.43
+      vis_decode_tps: 140.16
+      step_ms: 23.83
+      mean_accepted_len: 3.34
+      weight_gib: 12.08
+      ppl: 6.5336
+      peak_vram_mib: 16631
+      safety_margin_gib: 7.75
+    measured_source: "会话日志转录（raw 未同步）：sweep_H_mix_cap512_n5"
+
+  - id: N4_q2_cap512
+    name: Q2_K（10.86 GB）+ cap 512 · **唯一过 150 的组合**
+    plans: [na_width_q2, na_cap512, spec_mtp, kv_q4q4_fa, mmproj_quant_q8,
+            mm_mtmd_batch, spec_depth_4, spec_draft_kv_q4, sched_parallel1, sched_b2048]
+    startup_flags: [-ngl 99, "--mmproj {mmproj}", '-md "{draft}"',
+                    --spec-type draft-mtp, -ngld 99, --spec-draft-n-max 5,
+                    --spec-draft-type-k q4_0, --spec-draft-type-v q4_0,
+                    --parallel 1, --ctx-size 65536,
+                    --cache-type-k q4_0, --cache-type-v q4_0,
+                    --image-max-tokens 512, --mtmd-batch-max-tokens 256,
+                    -b 2048, -ub 512, "--flash-attn on"]
+    expected: {decode_tps: 159.44, vis_decode_tps: 161.27}
+    measured:
+      decode_tps: 159.44
+      vis_decode_tps: 161.27
+      step_ms: 28.05
+      mean_accepted_len: 4.52
+      weight_gib: 10.12
+      ppl: 7.1710
+      peak_vram_mib: 14907
+      safety_margin_gib: 9.43
+    measured_source: "会话日志转录（raw 未同步）：sweep_H_q2_cap512_n5"
+
+  - id: N5_draftq8
+    name: 草稿升到 Q8_0（负收益对照）
+    plans: [quant_q4km_ud, na_draft_q8, spec_mtp, kv_q4q4_fa, mmproj_quant_q8,
+            mm_cap_768, mm_mtmd_batch, spec_depth_4, spec_draft_kv_q4,
+            sched_parallel1, sched_b2048]
+    startup_flags: [-ngl 99, "--mmproj {mmproj}", '-md "{draft}"',
+                    --spec-type draft-mtp, -ngld 99, --spec-draft-n-max 4,
+                    --spec-draft-type-k q4_0, --spec-draft-type-v q4_0,
+                    --parallel 1, --ctx-size 65536,
+                    --cache-type-k q4_0, --cache-type-v q4_0,
+                    --image-max-tokens 768, --mtmd-batch-max-tokens 256,
+                    -b 2048, -ub 512, "--flash-attn on"]
+    expected: {decode_tps: 80.88, vis_decode_tps: 102.61}
+    measured:
+      decode_tps: 80.88
+      vis_decode_tps: 102.61
+      step_ms: 31.32
+      mean_accepted_len: 3.21
+      mtp_accept_rate: 0.55
+      ppl: 5.8229
+      peak_vram_mib: 20793
+      safety_margin_gib: 3.69
+    measured_source: "会话日志转录（raw 未同步）：sweep_X_q4_d8_n4"
+
+selected_bundle: B0_uplimit
+compare_bundles: [B0_uplimit, N1_cap512, N2_q3km, N3_mix, N4_q2_cap512, N5_draftq8]

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..config import GIB, PerfConfig, flag_value, load_json
+from ..config import GIB, PerfConfig, flag_present, flag_value, load_json
 
 
 def _table(headers: list[str], rows: list[list[str]], aligns: list[str] | None = None) -> str:
@@ -300,6 +300,31 @@ def _kpi_reading_rows(cfg: PerfConfig, defn: dict, base: dict,
     return rows
 
 
+def _baseline_is_speculative(cfg: PerfConfig) -> bool:
+    """
+    反推带宽时用的「基线 Decode 值」是否来自含投机解码的配置。
+
+    为什么不能直接看选定 bundle：纯文本报告的 `baseline_native` 是 50.96
+    （无投机），虽然最终方案开了 MTP，但反推用的是 50.96 —— 此时
+    「t/s × 权重字节」**成立**。反之 uplimit 报告的基线本身就是 MTP 配置
+    （83.66），该口径就失效。
+
+    判据优先级：
+      1) 台账 `baseline_native.speculative`（显式声明，推荐）
+      2) 回落：选定 bundle 是否带 `--spec-type`
+    """
+    try:
+        _led = load_json(cfg.ledger())
+    except Exception:
+        _led = {}
+    decl = (_led.get("baseline_native") or {}).get("speculative")
+    if decl is not None:
+        return bool(decl)
+    b = next((x for x in cfg.plan.get("bundles", [])
+              if x.get("id") == cfg.plan.get("selected_bundle")), None)
+    return bool(b and flag_present(b.get("startup_flags", []), "--spec-type"))
+
+
 def _env_probe_rows(cfg: PerfConfig, base: dict, defn: dict, opt: dict) -> list:
     """
     生成「环境探针实测」表：这台机器**实测**出来的硬件事实。
@@ -336,6 +361,8 @@ def _env_probe_rows(cfg: PerfConfig, base: dict, defn: dict, opt: dict) -> list:
                      f"该探针数据可能来自另一台机器，请勿直接引用"])
     declared = cfg.device.get("memory", {}).get("mem_bandwidth_gbps_peak")
     _key = "stream_file" if probe.get("stream_file") else "read_bw"
+    # 判据：看「被反推的值」是否来自投机配置（详见 _baseline_is_speculative）
+    _spec_on0 = _baseline_is_speculative(cfg)
     if declared and probe.get(_key):
         rows.append([
             f'配置声明的峰值带宽', f"{declared:.1f} GB/s",
@@ -352,7 +379,35 @@ def _env_probe_rows(cfg: PerfConfig, base: dict, defn: dict, opt: dict) -> list:
     # 否则反推带宽会系统性偏高，进而把「已接近上限」误判成「还有空间」。
     from ..config import weight_bytes as _wb_of
     _wb = _wb_of(cfg.model)
-    if _native and probe.get(_key):
+    # ⚠️ 开启投机解码时，「t/s × 权重字节」**不是**带宽：
+    #    一次权重读取产出 mean_len 个 token，反推值会被放大 mean_len 倍
+    #    （本项目实测放大到 1347 GB/s，是纯读带宽的 1.53×）。
+    #    这种情况下只能报「口径失效」，不能报「内核比探针快 53%」——
+    #    后者会让人误以为还有带宽没榨干。
+    #
+    # 判据是「**被反推的那个值**是否来自投机配置」，而不是「选定 bundle 是否投机」：
+    # 纯文本报告的 baseline_native 是 50.96（无投机），虽然最终方案开了 MTP，
+    # 但反推用的是 50.96 —— 此时该口径**成立**。
+    # 台账可用 baseline_native.speculative 显式声明；缺省时回落到「选定 bundle 是否投机」。
+    _spec_on = _baseline_is_speculative(cfg)
+    if _native and probe.get(_key) and _spec_on:
+        _ml = None
+        for _b in cfg.plan.get("bundles", []):
+            if _b.get("id") == cfg.plan.get("selected_bundle"):
+                _ml = (_b.get("measured") or {}).get("mean_accepted_len")
+        _ml_txt = f"约 {_ml} 个" if _ml else "多个"
+        _ml_times = f"{_ml} 倍" if _ml else "mean_len 倍"
+        rows.append([
+            "**交叉校验：推理反推带宽**",
+            "**口径失效**",
+            "**该基线值来自含投机解码的配置，本口径不成立**：一次权重读取产出 "
+            f"{_ml_txt} token，用「t/s × 权重字节」反推会把它放大 "
+            f"{_ml_times}（本项目实测得到 {_native * _wb / 1e9:.0f} GB/s，"
+            f"是纯读带宽 {probe[_key]:.0f} GB/s 的 "
+            f"{_native * _wb / 1e9 / probe[_key]:.2f}×）。"
+            "正确的效率指标是「每次权重读取产出的 token 数」（= mean_len），"
+            "而不是带宽达成率。无投机时的对照见 §3.3 的「算力侧」表。"])
+    elif _native and probe.get(_key):
         _inf_bw = _native * _wb / 1e9
         _ratio = _inf_bw / probe[_key]
         if _ratio > 3.0:
@@ -428,7 +483,16 @@ def _env_probe_rows(cfg: PerfConfig, base: dict, defn: dict, opt: dict) -> list:
                          f"判定：{verdict}"])
     # 生产内核达成率：用真实推理反推的带宽 ÷ 纯读带宽。
     # 这是唯一能回答「生产 kernel 离硬件天花板还有多远」的量。
-    if _hw and _native:
+    # ⚠️ 投机解码下这个比值没有意义（一次读取产出多个 token，反推值被放大
+    #    mean_len 倍，会算出 >100%），此时必须显式标注失效而不是报「已无空间」。
+    if _hw and _native and _spec_on0:
+        rows.append(["**生产内核达成率（推理反推 ÷ 纯读）**", "**口径失效**",
+                     "**投机解码下该比值不成立**：一次权重读取产出多个 token，"
+                     "反推值被放大到纯读带宽以上（本项目为 "
+                     f"{_native * _wb_of(cfg.model) / 1e9 / _hw * 100:.0f}%）。"
+                     "它既不能说明「kernel 已无空间」，也不能说明「超出物理带宽」。"
+                     "无投机时的真实达成率见 §3.3 的「算力侧」表"])
+    elif _hw and _native:
         _prod_bw = _native * _wb_of(cfg.model) / 1e9
         _attain = _prod_bw / _hw
         _verdict = ("**kernel 层已无空间**：生产内核拿到纯读带宽的 "
@@ -625,7 +689,12 @@ def build_report(cfg: PerfConfig, defn: dict, base: dict, prof: dict,
     _mem_measured_by = "nvidia-smi" if is_gpu else "系统监控 / 厂商 profiler"
 
     # ---------------------------------------------------------------- 头部
-    W(f"# {m['name']} 推理性能分析与优化报告")
+    # 标题优先用 task.title：同一模型的多套任务（纯文本 / 多模态 / 质量评测）
+    # 必须能一眼区分，否则报告放进同一个目录后无法辨认。
+    # 注意 cfg.task 是 task_*.yaml 的**整个文档**（scenarios/kpis 与 task 同级），
+    # 标题在 t["task"]["title"] 里，不在 t["title"]。
+    _title = (t.get("task") or {}).get("title") or t.get("title")
+    W(f"# {_title or (m['name'] + ' 推理性能分析与优化报告')}")
     W("")
     W(f"> **目标读者**：端侧/边缘大模型推理优化工程师、性能工程与部署团队")
     W(f"> **前置知识**：Transformer 结构与 Prefill/Decode 差异、内存带宽与 roofline "
@@ -1575,10 +1644,23 @@ def build_report(cfg: PerfConfig, defn: dict, base: dict, prof: dict,
           + (f"，对应内存带宽利用率 **{_bu*100:.1f}%**；" if _bu else "；"))
     _ub = base["_derived"]["decode_tps_upper_bound"]
     _wb_gb = _wb_eff / 1e9
+    _ratio = (base['extra']['baseline_native_decode_tps'] / _ub) if _native else None
+    _spec_on = any("--spec-type" in str(f)
+                   for b in cfg.plan.get("bundles", []) if b.get("id") == cfg.plan.get("selected_bundle")
+                   for f in b.get("startup_flags", []))
+    if _ratio and _ratio > 1:
+        # 超过 100% 说明该上界的分母口径不适用（投机解码下一次读权重产出多个 token）
+        _rel = (f"**实测 {base['extra']['baseline_native_decode_tps']} t/s 已超过该上界 "
+                f"{(_ratio-1)*100:.1f}%** —— 这**不是**测量错误，而是口径不适用："
+                "开启投机解码后，一次权重读取产出 mean_len 个 token，"
+                "分母不再是「每步读一遍权重」。正确上界见 §3.11。")
+    elif _ratio:
+        _rel = f"已达上界的 {_ratio*100:.1f}%；"
+    else:
+        _rel = "；"
     W(f"- 理论解码上界为 **{_ub} t/s**（= {d['memory']['mem_bandwidth_gbps_peak']} GB/s ÷ "
       f"{_wb_gb:.2f} GB，注意此处用十进制 GB 而非 GiB）"
-      + (f"，已达上界的 "
-         f"{base['extra']['baseline_native_decode_tps']/_ub*100:.1f}%；" if _native else "；"))
+      + _rel)
     _curve = (base.get("extra") or {}).get("long_context_curve") or []
     if len(_curve) >= 2:
         _c0, _c1 = _curve[0], _curve[-1]
@@ -1598,17 +1680,31 @@ def build_report(cfg: PerfConfig, defn: dict, base: dict, prof: dict,
                         "不是几何公式推算 —— 两者差额见 §1.4")
         elif _kv_srcs == {"derived"}:
             _kxc2 = (base.get("memory") or {}).get("kv_crosscheck") or {}
-            _kv_note = ("**几何公式推算值**（全注意力层数 × ctx × KV heads × head_dim × 位宽）。"
-                        "该列的可信度取决于架构超参是否为真值 —— "
-                        + ("本次已用 GGUF 元数据核验，"
-                           f"并用同配置 f16↔q8_0/q4_0 的显存差做了交叉校验"
-                           f"（几何预测 {_kxc2.get('geometric_delta_mib'):,} MiB vs "
-                           f"实测 {_kxc2.get('measured_delta_mib'):,} MiB，"
-                           f"误差 {_kxc2.get('error_pct')}%），"
-                           "因此可用于趋势与量级判断；绝对值的 ±10% 误差见 §1.4"
-                           if _kxc2 else
-                           "本次未做显存差交叉校验，该列只能用于趋势判断，"
-                           "绝对值需谨慎引用"))
+            # 交叉校验可能只做了定性说明、没有数值（本轮就没有重测「仅换 KV 精度」）。
+            # 缺数值时降级为定性表述，而不是让报告崩掉。
+            _has_num = (_kxc2.get("geometric_delta_mib") is not None
+                        and _kxc2.get("measured_delta_mib") is not None)
+            if _has_num:
+                _kv_note = ("**几何公式推算值**（全注意力层数 × ctx × KV heads × head_dim × 位宽）。"
+                            "该列的可信度取决于架构超参是否为真值 —— "
+                            "本次已用 GGUF 元数据核验，"
+                            f"并用同配置仅换 KV 精度的显存差做了交叉校验"
+                            f"（几何预测 {_kxc2.get('geometric_delta_mib'):,} MiB vs "
+                            f"实测 {_kxc2.get('measured_delta_mib'):,} MiB，"
+                            f"误差 {_kxc2.get('error_pct')}%）。"
+                            + ("差额超过 20%，说明**几何模型只算 KV 存储、不算工作区** —— "
+                               "它适合判断趋势与量级，不能用于「还剩多少 MiB」的精确判定"
+                               if (_kxc2.get("error_pct") or 0) > 20 else
+                               "说明几何模型对 **KV 存储**是准确的（工作区不在公式内，"
+                               "整体显存预算仍需实测校准，见 §1.4）"))
+            elif _kxc2.get("design") or _kxc2.get("note"):
+                _kv_note = ("**几何公式推算值**（全注意力层数 × ctx × KV heads × head_dim × 位宽）。"
+                            f"本次未重测交叉校验：{_kxc2.get('note') or _kxc2.get('design')}"
+                            " —— 该列只能用于趋势判断，绝对值以实测峰值为准。")
+            else:
+                _kv_note = ("**几何公式推算值**（全注意力层数 × ctx × KV heads × head_dim × 位宽）。"
+                            "本次未做显存差交叉校验，该列只能用于趋势判断，"
+                            "绝对值需谨慎引用")
         else:
             _kv_note = ("混合来源：部分点为实测、部分为推算，逐行见台账 "
                         "`curves.long_context[].kv_gib_source`")
@@ -2052,8 +2148,13 @@ def build_report(cfg: PerfConfig, defn: dict, base: dict, prof: dict,
     _mtp_txt = (f'实测 {_mtp["speedup_vs_native"]:.2f}×'
                 f'（{_mtp["decode_tps_range"][0]}~{_mtp["decode_tps_range"][1]} t/s）'
                 if _mtp.get("speedup_vs_native") else "文献经验值 1.2~1.6×")
-    _mtp_cost = ("+1.28 GiB 显存；与并发竞争" if _mtp.get("decode_tps_typical")
-                 else "需额外 Draft 权重；接受率强依赖任务类型")
+    # Draft 的显存代价从配置里的 artifacts 取，不写死（换模型就变）
+    _draft_gib = next((a.get("bytes") / 1024 ** 3
+                       for a in (m.get("artifacts") or [])
+                       if a.get("role") == "draft_mtp"), None)
+    _mtp_cost = (f"+{_draft_gib:.2f} GiB 显存（Draft 权重）；与并发竞争"
+                 if _draft_gib else
+                 "需额外 Draft 权重；接受率强依赖任务类型")
     W(_table(["优化动作", "可减少的字节", "理论收益上限", "代价"],
              [["FFN 降至更低比特（Q4→Q3/Q2）",
                f'全模型权重 {_ffn_step:.1f}% × 降 {_ffn_bits_cut*100:.0f}% 位宽 '
@@ -2132,13 +2233,15 @@ def build_report(cfg: PerfConfig, defn: dict, base: dict, prof: dict,
                 # 那只是同一个公式算了两遍。真正的实测锚点单列在下面。
                 W(f"> **两列同源**：台账的 KV 曲线是按几何公式推算的（`kv_gib_source: derived`），"
                   f"与左列同源，因此「一致」不能作为公式正确的证据。"
-                  + (f"真正的实测锚点只有一处：同配置仅换 KV 精度（f16 → q8_0/q4_0，"
-                     f"{_kxc.get('ctx_k', 64)}K × 2 槽）的显存差 "
-                 f"{_kxc.get('measured_delta_mib'):,} MiB，"
-                     f"几何预测 {_kxc.get('geometric_delta_mib'):,} MiB —— "
-                     f"误差 {_kxc.get('error_pct')}%。"
-                     if _kxc else
-                     "真正的实测锚点需补测：同配置仅换 KV 精度，比较显存峰值差。"))
+                  + ((f"真正的实测锚点只有一处：{_kxc.get('design') or '同配置仅换 KV 精度'}"
+                      f"的显存差 "
+                      f"{_kxc.get('measured_delta_mib'):,} MiB，"
+                      f"几何预测 {_kxc.get('geometric_delta_mib'):,} MiB —— "
+                      f"误差 {_kxc.get('error_pct')}%。")
+                     if _kxc and _kxc.get("measured_delta_mib") is not None
+                     else (f"本次未重测该锚点：{_kxc.get('note') or _kxc.get('design')}"
+                           if _kxc else
+                           "真正的实测锚点需补测：同配置仅换 KV 精度，比较显存峰值差。")))
             elif abs(_ratio - 1.0) <= 0.10:
                 W(f"> 模型值与实测值并列。两者在 {_last_ctx_k}K 处相差 "
                   f"{abs(_ratio-1)*100:.1f}%（{_kv_l[-1]['kv_gib_model']} vs "
@@ -2596,8 +2699,10 @@ def build_report(cfg: PerfConfig, defn: dict, base: dict, prof: dict,
          (f"台账曲线为几何推算（与模型列同源）；唯一实测锚点是同配置仅换 KV 精度"
           f"的显存差：{_kxc.get('measured_delta_mib'):,} MiB 实测 vs "
           f"{_kxc.get('geometric_delta_mib'):,} MiB 预测（误差 {_kxc.get('error_pct')}%）。"
-          if _kxc else
-          "台账未提供 KV 实测锚点，KV 结论仅有模型值。"),
+          if _kxc and _kxc.get("measured_delta_mib") is not None else
+          (f"台账曲线为几何推算；本次未重测实测锚点 —— {_kxc.get('note') or _kxc.get('design')}"
+           if _kxc else
+           "台账未提供 KV 实测锚点，KV 结论仅有模型值。")),
          "差额不静默校准；先查清来源（架构 / 量化档位 / 测量口径）再采信。"],
         ["未采集项",
          ("、".join(_missing_items) if _missing_items
@@ -3039,8 +3144,18 @@ def build_report(cfg: PerfConfig, defn: dict, base: dict, prof: dict,
     _q = _ledger_quality(cfg)
     # 台账 quality.ppl 里的实测值按量化名匹配到档位表
     _pl_rows = ((_q.get("ppl") or {}).get("rows") or [])
-    _pl_map = {r["quant"].split()[0].upper(): r for r in _pl_rows}
-    _ref_name = (_pl_rows[0]["quant"].split()[0] if _pl_rows else "参照档")
+    # 同一量化档位可能有多行（不同 KV 精度）—— 取 role=deployed 的那一行代表部署配置；
+    # 参照档取 role=reference，缺省时取最后一行（台账约定：精度从高到低排列）。
+    # 旧实现用 dict 覆盖，会把部署行（q4_0 KV）换成另一行（f16 KV），
+    # 导致「相对 X」的标签与被比较的值不是同一组数据。
+    _pl_map: dict[str, dict] = {}
+    for _r in _pl_rows:
+        _k0 = _r["quant"].split()[0].upper()
+        if _k0 not in _pl_map or _r.get("role") == "deployed":
+            _pl_map[_k0] = _r
+    _ref_row = next((r for r in _pl_rows if r.get("role") == "reference"),
+                    _pl_rows[-1] if _pl_rows else None)
+    _ref_name = (_ref_row["quant"].split()[0] if _ref_row else "参照档")
     _ladder_rows = []
     _base_ppl = None
     for _r in m.get("precision_ladder", []):
@@ -3048,8 +3163,8 @@ def build_report(cfg: PerfConfig, defn: dict, base: dict, prof: dict,
         _hit = _pl_map.get(_k)
         _ppl_txt = (f'{_hit["ppl"]}' if _hit else "**待采集**")
         _note = ""
-        if _hit and _base_ppl is None:
-            _base_ppl = _hit["ppl"]
+        if _hit and _base_ppl is None and _ref_row is not None:
+            _base_ppl = _ref_row.get("ppl")
         if _hit and _base_ppl and _hit["ppl"] != _base_ppl:
             _note = f'（相对 {_ref_name} {( _hit["ppl"]/_base_ppl-1)*100:+.2f}%）'
         _ladder_rows.append([
@@ -3199,12 +3314,25 @@ def build_report(cfg: PerfConfig, defn: dict, base: dict, prof: dict,
     # 峰值显存的「恶化」需要单独说明：它不是缺陷，是换收益的代价
     _pv = _cmp_rows.get("peak_vram_mib")
     if _pv and _pv.get("improved") is False:
-        W(f"> **显存「恶化」不是缺陷**：{_num(_pv['before'])} → {_num(_pv['after'])} MiB"
-          f"（{_pv['delta_pct']:+.2f}%）的增量来自 MTP Draft 权重（+1.28 GiB）—— "
-          f"它是 +77% 单流吞吐的**代价**。判定标准不是「显存不能涨」，"
-          f"而是「涨完之后是否仍满足硬约束」：{_num(_pv['after'])} MiB ≤ 20,480 MiB ✅，"
-          f"且安全冗余 {_num((_cmp_rows.get('safety_margin_gib') or {}).get('after'))} GiB "
-          f"≥ 4.0 GiB ✅。")
+        # 三条数字全部从本次数据取：增量、硬约束、吞吐收益。
+        _dpct = _cmp_rows.get("decode_tps") or {}
+        _delta_mib = (float(_pv["after"]) - float(_pv["before"])
+                      if _pv.get("before") is not None else None)
+        _cap = _dget(d, "constraints.max_vram_gib", None)
+        _cap_mib = int(float(_cap) * 1024) if _cap else None
+        _margin = (_cmp_rows.get("safety_margin_gib") or {}).get("after")
+        _min_m = _dget(d, "constraints.min_safety_margin_gib", None)
+        _cause = (f"（其中 MTP Draft 权重约 {_draft_gib:.2f} GiB）"
+                  if _draft_gib else "")
+        _gain_txt = (f"它是 {_dpct['delta_pct']:+.1f}% 单流吞吐的**代价**"
+                     if _dpct.get("delta_pct") is not None else "它是这项收益的代价")
+        W(f"> **显存「恶化」不一定是缺陷**：{_num(_pv['before'])} → "
+          f"{_num(_pv['after'])} MiB（{_pv['delta_pct']:+.2f}%"
+          + (f"，+{_delta_mib:.0f} MiB" if _delta_mib else "") + f"）{_cause} —— "
+          f"{_gain_txt}。判定标准不是「显存不能涨」，而是「涨完之后是否仍满足硬约束」："
+          + (f"{_num(_pv['after'])} MiB ≤ {_cap_mib:,} MiB ✅，" if _cap_mib else "")
+          + (f"且安全冗余 {_num(_margin)} GiB ≥ {_min_m} GiB ✅。"
+             if _margin is not None and _min_m else "见 §6.1 的 must_pass 判定。"))
         W("")
 
     # --------------------------------------------------------- 6 回归验收
@@ -3500,15 +3628,27 @@ def build_report(cfg: PerfConfig, defn: dict, base: dict, prof: dict,
     # 这张表必须按**本次实际用到的数据**动态生成，不能写死 ——
     # 写死的「本报告中的使用」列会在换模型后继续声称用了某些数据。
     _gv = defn.get("gguf_verification") or {}
-    _m_items = ["基线吞吐（llama-bench 与 llama-server 两套口径）",
-                f"峰值显存 {((base.get('memory') or {}).get('peak_used_mib') or '—')} MiB",
-                (f"长上下文深度曲线（{_curve_range}）"
-                 if (_curve_range := _curve_span(base)) else
-                 "长上下文深度曲线（本次未采集）"),
-                "KV 精度同深度对照（f16/q8q8/q8q4/q4q4 @32K）",
-                "FA on/off、batch 1024/2048/4096 对照",
-                "MTP 接受率（llama-server 日志逐请求）",
-                "30 分钟持续负载（吞吐/显存/温度/功耗）"]
+    # 只列**本次台账里真实存在**的采集项；没做过的不要写进来（见 docstring）。
+    _m_items = ["基线吞吐（llama-server 端到端 SSE 计时）",
+                f"峰值显存 {((base.get('memory') or {}).get('peak_used_mib') or '—')} MiB"
+                "（多次运行取最大值）"]
+    if (_curve_range := _curve_span(base)):
+        _m_items.append(f"长上下文深度曲线（{_curve_range}）")
+    # build_report 里没有 ledger 变量 —— 用 _ledger_quality 同样的方式按需读取，
+    # 避免依赖外部局部变量（顺序一变就 NameError）。
+    try:
+        _led_b = load_json(cfg.ledger())
+    except Exception:
+        _led_b = {}
+    _led_ex = _led_b.get("extra") or {}
+    if ((_led_b.get("quality") or {}).get("ppl") or {}).get("rows"):
+        _m_items.append("KV 精度对照（PPL / 24K 精确检索 / 视觉题）")
+    if _led_ex.get("soak"):
+        _m_items.append("长时混合负载（吞吐 / 显存 / 温度 / 功耗）")
+    if _led_ex.get("fa_quants_ab"):
+        _m_items.append("FA 量化 kernel A/B（stock vs 补编译构建）")
+    if _led_ex.get("mtp_acceptance"):
+        _m_items.append("MTP 接受率（llama-server 日志逐请求）")
     _d_items = ["逐算子耗时归因（权重字节占比 × 实测单步耗时）",
                 "带宽利用率与 roofline 判定",
                 "KV 几何容量（按 GGUF 真值架构）",

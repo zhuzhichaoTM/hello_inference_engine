@@ -120,9 +120,14 @@ def build_command(cfg: PerfConfig, flags: list[str]) -> str:
     d = Path(base).parent
     roles = {a.get("role"): str(d / a.get("file", ""))
              for a in (cfg.model.get("artifacts") or []) if a.get("role")}
-    mapping = {"{draft}": roles.get("draft_mtp", "<draft.gguf>"),
-               "{mmproj}": roles.get("mmproj", "<mmproj.gguf>"),
-               "{model}": base}
+    mapping = {"{model}": base,
+               "{draft}": roles.get("draft_mtp", "<draft.gguf>"),
+               "{mmproj}": roles.get("mmproj", "<mmproj.gguf>")}
+    # 任意 role 都能当占位符：多模态场景下同一类资产有多个档位
+    # （mmproj_f16 / mmproj_q8 / mmproj_q4），基线要用 F16、优化后用 Q8，
+    # 只认死 {mmproj} 会让「回滚命令」指向优化后的文件。
+    for _role, _path in roles.items():
+        mapping.setdefault("{" + _role + "}", _path)
     resolved = []
     for f in flags:
         for k, v in mapping.items():

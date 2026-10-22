@@ -1,403 +1,405 @@
 {
-  "meta": {
-    "model": "Qwen2.5-1.5B-Instruct",
-    "quant": "Q4_K_M",
-    "engine": "llama.cpp 07d937828",
-    "device": "Intel i7-4770HQ",
-    "backend": "cpu",
-    "os": "macOS 14.6.1",
-    "synthetic": false,
-    "measurement_note": "本台账数据采集于 2026-10-14 19:00-21:00（load average < 2）。之后同一台机器进入高负载（外部进程，load average 一度达 95），复测值下降 3~5 倍。因此**所有绝对值仅在该低负载窗口内有效**，引用前须确认机器空闲（`uptime` 的 1 分钟负载 < 核心数）。",
-    "collected_load_avg": "<2（4 核，每核 <0.5）"
+ "meta": {
+  "model": "Qwen2.5-1.5B-Instruct",
+  "quant": "Q4_K_M",
+  "engine": "llama.cpp 07d937828",
+  "device": "Intel i7-4770HQ",
+  "backend": "cpu",
+  "os": "macOS 14.6.1",
+  "synthetic": false,
+  "measurement_note": "本台账数据采集于 2026-10-14 19:00-21:00（load average < 2）。之后同一台机器进入高负载（外部进程，load average 一度达 95），复测值下降 3~5 倍。因此**所有绝对值仅在该低负载窗口内有效**，引用前须确认机器空闲（`uptime` 的 1 分钟负载 < 核心数）。",
+  "collected_load_avg": "<2（4 核，每核 <0.5）"
+ },
+ "theoretical": {
+  "vram_bandwidth_gbps": 25.6,
+  "weight_gib": 1.039,
+  "decode_tps_upper_bound": 23.8
+ },
+ "baseline_native": {
+  "config": "CPU -ngl 0 threads=4",
+  "decode_tps": 17.85,
+  "bandwidth_utilization": 0.78,
+  "source": "/tmp/qwen15b_bench/01_threads.json",
+  "confidence": "measured",
+  "speculative": false,
+  "speculative_note": "**该基线值是否来自含投机解码的配置** —— 决定「t/s × 权重字节」能否当带宽用。True 时一次权重读取产出 mean_len 个 token，反推值会被放大，不能与纯读带宽比较。"
+ },
+ "scenarios": {
+  "short_chat": {
+   "prompt_tokens": 64,
+   "gen_tokens": 128,
+   "parallel": 1,
+   "prefill_tps": 69.13,
+   "decode_tps": 17.54,
+   "source": "/tmp/qwen15b_bench/06_short.json",
+   "confidence": "measured",
+   "command": "llama-bench -m $MODEL -ngl 0 -o json -t 4 -p 64 -n 128 -r 5",
+   "command_source": "recorded",
+   "cache_type_k": "f16",
+   "cache_type_v": "f16"
   },
-  "theoretical": {
-    "vram_bandwidth_gbps": 25.6,
-    "weight_gib": 1.039,
-    "decode_tps_upper_bound": 23.8
+  "long_ctx_8k": {
+   "prompt_tokens": 512,
+   "gen_tokens": 64,
+   "parallel": 1,
+   "depth": 8192,
+   "prefill_tps": 34.65,
+   "decode_tps": 7.22,
+   "kv_type": "f16",
+   "source": "/tmp/qwen15b_bench/02_depth.json（F16 KV @ depth 8192）",
+   "confidence": "measured",
+   "command": "llama-bench -m $MODEL -ngl 0 -o json -t 4 -p 512 -n 64 -d 8192 -r 3",
+   "command_source": "recorded",
+   "cache_type_k": "f16",
+   "cache_type_v": "f16"
   },
-  "baseline_native": {
-    "config": "CPU -ngl 0 threads=4",
-    "decode_tps": 17.85,
-    "bandwidth_utilization": 0.78,
-    "source": "/tmp/qwen15b_bench/01_threads.json",
-    "confidence": "measured"
+  "long_ctx_16k": {
+   "prompt_tokens": 512,
+   "gen_tokens": 64,
+   "parallel": 1,
+   "depth": 16384,
+   "prefill_tps": 22.65,
+   "decode_tps": 4.19,
+   "source": "/tmp/qwen15b_bench/02_depth.json",
+   "confidence": "measured",
+   "command": "llama-bench -m $MODEL -ngl 0 -o json -t 4 -p 512 -n 64 -d 16384 -r 3",
+   "command_source": "recorded",
+   "cache_type_k": "f16",
+   "cache_type_v": "f16"
   },
-  "scenarios": {
-    "short_chat": {
-      "prompt_tokens": 64,
-      "gen_tokens": 128,
-      "parallel": 1,
-      "prefill_tps": 69.13,
-      "decode_tps": 17.54,
-      "source": "/tmp/qwen15b_bench/06_short.json",
-      "confidence": "measured",
-      "command": "llama-bench -m $MODEL -ngl 0 -o json -t 4 -p 64 -n 128 -r 5",
-      "command_source": "recorded",
-      "cache_type_k": "f16",
-      "cache_type_v": "f16"
-    },
-    "long_ctx_8k": {
-      "prompt_tokens": 512,
-      "gen_tokens": 64,
-      "parallel": 1,
-      "depth": 8192,
-      "prefill_tps": 34.65,
-      "decode_tps": 7.22,
-      "kv_type": "f16",
-      "source": "/tmp/qwen15b_bench/02_depth.json（F16 KV @ depth 8192）",
-      "confidence": "measured",
-      "command": "llama-bench -m $MODEL -ngl 0 -o json -t 4 -p 512 -n 64 -d 8192 -r 3",
-      "command_source": "recorded",
-      "cache_type_k": "f16",
-      "cache_type_v": "f16"
-    },
-    "long_ctx_16k": {
-      "prompt_tokens": 512,
-      "gen_tokens": 64,
-      "parallel": 1,
-      "depth": 16384,
-      "prefill_tps": 22.65,
-      "decode_tps": 4.19,
-      "source": "/tmp/qwen15b_bench/02_depth.json",
-      "confidence": "measured",
-      "command": "llama-bench -m $MODEL -ngl 0 -o json -t 4 -p 512 -n 64 -d 16384 -r 3",
-      "command_source": "recorded",
-      "cache_type_k": "f16",
-      "cache_type_v": "f16"
-    },
-    "soak_10min": {
-      "status": "todo",
-      "note": "CPU 温度/持续负载需手动 powermetrics 采集"
-    },
-    "long_ctx_8k_kvq8": {
-      "prompt_tokens": 512,
-      "gen_tokens": 64,
-      "parallel": 1,
-      "depth": 8192,
-      "prefill_tps": 11.48,
-      "decode_tps": 7.89,
-      "kv_type": "q8_0",
-      "source": "/tmp/qwen15b_bench/08_d8192_kvq8.json（q8_0 KV @ depth 8192）",
-      "confidence": "measured",
-      "command": "llama-bench -m $MODEL -ngl 0 -o json -t 4 -p 512 -n 64 -d 8192 -ctk q8_0 -ctv q8_0 -r 3",
-      "command_source": "recorded",
-      "cache_type_k": "q8_0",
-      "cache_type_v": "q8_0"
-    },
-    "long_gen": {
-      "status": "todo",
-      "note": "长生成场景未采集（本次只测了短生成与长上下文）。补采命令见 §2.2"
-    },
-    "multi_turn": {
-      "status": "todo",
-      "note": "多轮对话场景未采集 —— 需要客户端保持 session 累积上下文。该项对评估 Prefix Cache 收益必要"
-    }
+  "soak_10min": {
+   "status": "todo",
+   "note": "CPU 温度/持续负载需手动 powermetrics 采集"
   },
-  "curves": {
-    "long_context": [
-      {
-        "ctx": 2048,
-        "prefill_tps": 59.65,
-        "decode_tps": 13.03,
-        "kv_gib": 0.004,
-        "command": "llama-bench -m $MODEL -ngl 0 -o json -t 4 -p 512 -n 64 -d 2048 -r 3",
-        "command_source": "recorded",
-        "prompt_tokens": 512,
-        "gen_tokens": 64,
-        "cache_type_k": "f16",
-        "cache_type_v": "f16",
-        "kv_gib_source": "derived",
-        "kv_gib_note": "由几何公式推算（28 层 × 2 KV heads × head_dim 128 × f16），未做内存快照实测"
-      },
-      {
-        "ctx": 8192,
-        "prefill_tps": 34.65,
-        "decode_tps": 7.22,
-        "kv_gib": 0.016,
-        "command": "llama-bench -m $MODEL -ngl 0 -o json -t 4 -p 512 -n 64 -d 8192 -r 3",
-        "command_source": "recorded",
-        "prompt_tokens": 512,
-        "gen_tokens": 64,
-        "cache_type_k": "f16",
-        "cache_type_v": "f16",
-        "kv_gib_source": "derived"
-      },
-      {
-        "ctx": 16384,
-        "prefill_tps": 22.65,
-        "decode_tps": 4.19,
-        "kv_gib": 0.031,
-        "command": "llama-bench -m $MODEL -ngl 0 -o json -t 4 -p 512 -n 64 -d 16384 -r 3",
-        "command_source": "recorded",
-        "prompt_tokens": 512,
-        "gen_tokens": 64,
-        "cache_type_k": "f16",
-        "cache_type_v": "f16",
-        "kv_gib_source": "derived"
-      }
-    ]
+  "long_ctx_8k_kvq8": {
+   "prompt_tokens": 512,
+   "gen_tokens": 64,
+   "parallel": 1,
+   "depth": 8192,
+   "prefill_tps": 11.48,
+   "decode_tps": 7.89,
+   "kv_type": "q8_0",
+   "source": "/tmp/qwen15b_bench/08_d8192_kvq8.json（q8_0 KV @ depth 8192）",
+   "confidence": "measured",
+   "command": "llama-bench -m $MODEL -ngl 0 -o json -t 4 -p 512 -n 64 -d 8192 -ctk q8_0 -ctv q8_0 -r 3",
+   "command_source": "recorded",
+   "cache_type_k": "q8_0",
+   "cache_type_v": "q8_0"
   },
-  "memory": {
-    "breakdown_gib": {
-      "main_weight": 1.039,
-      "mmproj": 0.0,
-      "kv_cache": 0.031,
-      "runtime_buffer": 0.15
-    },
-    "peak_used_mib": 1974,
-    "vram_total_mib": 16384,
-    "safety_margin_mib": 14410,
-    "config": "CPU -ngl 0 -t 4 -c 8192, F16 KV",
-    "measure_method": "llama-cli 真实推理 + /usr/bin/time -l (maximum resident set size)",
-    "peak_rss_by_ctx": {
-      "8192": 1974,
-      "16384": 2199
-    },
-    "note": "峰值 RSS 含权重 1.04 GiB + KV + 运行时开销 0.79 GiB；16K 时因 KV 翻倍增至 2.20 GiB"
+  "long_gen": {
+   "status": "todo",
+   "note": "长生成场景未采集（本次只测了短生成与长上下文）。补采命令见 §2.2"
   },
-  "extra": {
-    "thermal": {
-      "temp_c": null,
-      "note": "需 powermetrics 采集"
-    },
-    "prefill_flash_attn": {
-      "prefill_tps": 77.88,
-      "source": "/tmp/qwen15b_bench/04_fa_on.json"
-    },
-    "tunnel": {},
-    "spec_mtp": {},
-    "cross_check": {
-      "llama_bench_tg_depth2048": 13.15,
-      "llama_cli_generation_depth2048": 8.4,
-      "llama_cli_generation_short": 19.1,
-      "note": "llama-bench 的 tg 只测纯解码吞吐（不采样、不含首 token）；llama-cli 的 Generation 是端到端墙钟速率，含采样与首 token 开销。两者相差约 35%，报告中必须区分口径。"
-    },
-    "load_sensitivity": {
-      "clean_load_decode_tps_4t": 17.85,
-      "clean_load_prefill_tps_4t": 78.42,
-      "loaded_decode_tps_4t": 9.19,
-      "loaded_prefill_tps_4t": 16.55,
-      "loaded_decode_tps_2t": 14.28,
-      "note": "CPU 后端的性能强依赖机器空闲度：共享内存带宽与物理核时，他人负载会直接压缩可用带宽。这是 CPU 后端与独显后端的本质差异 ——独显有独立显存带宽，不受主机其他进程影响。因此 CPU 场景下的性能采集必须记录并报告当时的系统负载。"
-    },
-    "depth_matched_comparison": {
-      "design": "唯一变量 = KV 精度；其余固定（-ngl 0 -t 4 -p 512 -n 64 -d 8192）",
-      "batches": [
-        {
-          "label": "低负载窗口",
-          "load_avg": "<2",
-          "collected": "2026-10-14 19:37",
-          "f16_decode_tps": 7.22,
-          "q8_0_decode_tps": 7.89,
-          "delta_pct": 9.28,
-          "source": "/tmp/qwen15b_bench/02_depth.json vs 08_d8192_kvq8.json"
-        },
-        {
-          "label": "中等负载窗口",
-          "load_avg": "≈10（2.5× 物理核）",
-          "collected": "2026-10-16 08:20-08:32",
-          "f16_decode_tps": 4.82,
-          "q8_0_decode_tps": 6.13,
-          "delta_pct": 27.18,
-          "source": "/tmp/qwen15b_bench/20_d8192_f16.json vs 21_d8192_q8q8.json"
-        },
-        {
-          "label": "高负载窗口（数据不可用）",
-          "load_avg": "≈22（5.5× 物理核）",
-          "collected": "2026-10-16 08:48",
-          "f16_decode_tps": null,
-          "q8_0_decode_tps": null,
-          "q8_0_q4_0_decode_tps": 2.76,
-          "delta_pct": null,
-          "source": "/tmp/qwen15b_bench/22_d8192_q8q4.json",
-          "excluded": true,
-          "exclude_reason": "采集时负载 22（5.5× 物理核），绝对值为该批次的 43%，不满足 measurement_validity 声明的「负载 < 物理核数」前提，因此**不纳入结论**，仅作为「负载污染」的实例保留。"
-        }
-      ],
-      "finding": "KV 量化的收益随内存带宽竞争加剧而放大：低负载下 +9.3%，中等负载下 +27.2%。物理解释：KV 读写与权重读取抢同一份内存带宽，带宽越紧张，减少 KV 字节的相对价值越高。",
-      "implication": "在共享/繁忙的 CPU 机器上部署时，KV 量化的收益会比空闲机器上测得的更大 —— 这也意味着**基准数据必须在受控负载下采集**，否则优化收益会被系统性地高估或低估。",
-      "absolute_values_caveat": "两批数据的绝对值不可跨批比较（负载不同）；只有**批内**的 f16↔q8_0 对照才有意义。报告中的绝对性能数字一律取自低负载窗口那一批。",
-      "quality_gate": "所有进入结论的测量批次必须满足：1 分钟负载 < 物理核数。不满足的批次标记 excluded=true 并保留原始文件，以便日后在空闲窗口重测 —— 删掉数据比留着标注更危险。"
-    },
-    "thread_scaling": {
-      "config": "ctx 4096, depth 0, F16 KV",
-      "t1": {
-        "prefill": 32.03,
-        "decode": 9.49
-      },
-      "t2": {
-        "prefill": 55.28,
-        "decode": 15.18
-      },
-      "t4": {
-        "prefill": 78.42,
-        "decode": 17.85
-      },
-      "t8": {
-        "prefill": 75.53,
-        "decode": 13.03
-      },
-      "note": "4 线程（=物理核数）为最优点；8 逻辑线程反而下降 27%（Decode 17.85→13.03），因为超线程共享执行单元与访存端口，在访存密集的 GEMV 上形成竞争。这直接验证了「线程数存在最优值」这一 CPU 后端特性。",
-      "source": "/tmp/qwen15b_bench/01_threads.json",
-      "best_decode_tps": 17.85,
-      "best_threads": 4,
-      "decode_at_4t": 17.85,
-      "thread_scaling_kpi": 1.0
-    },
-    "context_scaling": {
-      "config": "4 线程，F16 KV，depth 扫描",
-      "rows": [
-        {
-          "depth": 0,
-          "decode_tps": 17.74
-        },
-        {
-          "depth": 2048,
-          "decode_tps": 13.03
-        },
-        {
-          "depth": 8192,
-          "decode_tps": 7.22
-        },
-        {
-          "depth": 16384,
-          "decode_tps": 4.19
-        }
-      ],
-      "note": "上下文从 0 增长到 16K，Decode 从 17.74 掉到 4.19 t/s（-76%）。这是 CPU 后端最关键的性能特征：KV 读写挤占本已紧张的内存带宽。",
-      "source": "/tmp/qwen15b_bench/02_depth.json",
-      "decode_at_depth0": 17.74,
-      "decode_at_depth8192": 7.22,
-      "ctx_decay_8k_kpi": 0.407
-    },
-    "prefill_kv_penalty": {
-      "finding": "KV 量化在 Prefill 阶段有显著代价：8K 深度下 Prefill 从 34.65 t/s 掉到 11.48 t/s（-67%），而 Decode 反而提升 9.3%。",
-      "measurements": {
-        "f16_kv": {
-          "prefill_tps": 34.65,
-          "decode_tps": 7.22,
-          "source": "/tmp/qwen15b_bench/02_depth.json (d=8192)"
-        },
-        "q8_0_kv": {
-          "prefill_tps": 11.48,
-          "decode_tps": 7.89,
-          "source": "/tmp/qwen15b_bench/08_d8192_kvq8.json (d=8192)"
-        }
-      },
-      "likely_cause": "Prefill 是 Compute-bound：8K 上下文下注意力是 O(n²)，KV 每被读一次就要反量化一次。CPU 算力本就紧张（4 核 AVX2），反量化的额外算力开销直接吃掉了 Prefill 的吞吐。Decode 则是 Memory-bound，每步只读一遍 KV，减少 KV 字节的收益大于反量化开销，因此净收益为正。",
-      "implication": "**KV 量化的收益方向取决于阶段**：它救 Decode（访存）但伤 Prefill（算力）。因此选择 KV 量化档位时必须同时看两个阶段的 KPI，只报 Decode 提升会掩盖 Prefill 的严重退化。",
-      "verification_needed": "两批数据采集间隔 32 分钟，虽同处低负载窗口，仍建议在同一会话内连续复测以排除漂移。复测命令：\n  llama-bench -m <model> -ngl 0 -t 4 -p 512 -n 64 -d 8192 -r 3\n  llama-bench -m <model> -ngl 0 -t 4 -p 512 -n 64 -d 8192 \\\n              -ctk q8_0 -ctv q8_0 -r 3",
-      "status": "measured_but_needs_same_session_recheck"
-    }
-  },
-  "measurement_protocol": {
-    "tool": "llama-bench",
-    "tool_version": "llama.cpp b9962-07d937828（AppleClang 16, CPU 后端）",
-    "statistic": "每个配置重复 3~5 次，取 llama-bench 的 avg_ts（算术均值）；离散度见原始 samples_ts",
-    "measurement_point": "进程内计时：不含 HTTP 传输、客户端排队与采样开销",
-    "backend": "cpu",
-    "backend_label": "CPU 后端",
-    "accel_flags": [
-      "-ngl",
-      "0"
-    ],
-    "threads": 4,
-    "model_placeholder_note": "命令中的 $MODEL 指主模型权重路径（见 §0 环境准备）",
-    "flags": [
-      {
-        "flag": "-p N",
-        "meaning": "Prefill 口径：一次性处理 N 个 token 的**纯 prompt 吞吐**，不含采样与首 token 排队"
-      },
-      {
-        "flag": "-n N",
-        "meaning": "Decode 口径：在已有上下文中自回归生成 N 个 token 的**稳态速率**，排除首 token"
-      },
-      {
-        "flag": "-d N",
-        "meaning": "上下文深度：测量前先用合成 token 把 KV Cache 填到 N，再执行本次 Prefill/Decode —— 模拟「对话已进行到第 N 个 token」"
-      },
-      {
-        "flag": "-t N",
-        "meaning": "线程数；CPU 后端的关键调优参数，本批固定为 4（= 物理核数）"
-      },
-      {
-        "flag": "-ngl 0",
-        "meaning": "显式钉死纯 CPU 后端。本机装了 Metal（Intel Iris），不写会静默走 GPU"
-      },
-      {
-        "flag": "-ctk/-ctv",
-        "meaning": "KV Cache 的 K/V 量化类型；对照组 f16（默认），实验组 q8_0"
-      },
-      {
-        "flag": "-r N",
-        "meaning": "重复次数（本批 3~5 次）"
-      },
-      {
-        "flag": "-o json",
-        "meaning": "结构化输出供框架解析；原始 stdout 落盘 output/<run>/raw/"
-      }
-    ],
-    "conventions": [
-      "llama-bench 的 Decode（tg）是**纯解码**吞吐：不含采样、不含首 token 排队，因此**高于**端到端墙钟速率。同机同配置实测 llama-bench 13.15 t/s vs llama-cli 8.4 t/s（相差 35%），引用时必须标明来源。",
-      "表中 TTFT 列为**推导值**（prompt_tokens ÷ prefill_tps），不是端到端实测的首 token 延迟；它代表「在已有 depth 上下文之上处理新 prompt」的耗时。",
-      "所有测量在同一台机器、同一构建、同一模型文件下完成；**唯一变量在每次对照中只有一项**（见各表的「对照条件」）。",
-      "采集窗口的 1 分钟系统负载 < 2（4 物理核）。负载超标的数据不纳入结论 —— 详见 device_*.yaml 的 measurement_validity 与 §0。"
-    ]
-  },
-  "environment_verification": {
-    "collected": "2026-10-16",
-    "activities": [
-      {
-        "activity": "设备连接",
-        "status": "pass",
-        "evidence": "在本机（macOS 14.6.1）直接运行，无需远程连接或端口转发"
-      },
-      {
-        "activity": "SDK / 驱动安装",
-        "status": "n/a",
-        "evidence": "CPU 后端无驱动概念；工具链用系统自带 AppleClang 16，无需额外安装"
-      },
-      {
-        "activity": "Runtime 部署",
-        "status": "pass",
-        "evidence": "llama.cpp build/bin 下 llama-cli / llama-bench / llama-server 均可执行（commit 07d937828）"
-      },
-      {
-        "activity": "编译环境配置",
-        "status": "pass",
-        "evidence": "cmake + AppleClang 16，-O3 -mavx2 -mfma；详见 device_*.yaml 的 build_command"
-      },
-      {
-        "activity": "模型加载验证",
-        "status": "pass",
-        "evidence": "1.04 GiB 权重加载 + 1 token 生成共 2.83 s（墙钟），峰值 RSS 1687 MiB，无报错"
-      },
-      {
-        "activity": "Demo 运行验证",
-        "status": "pass",
-        "evidence": "中文单轮对话输出连贯；Prompt 67.5 t/s / Generation 17.7 t/s；峰值 RSS 1799 MiB"
-      }
-    ],
-    "model_load": {
-      "wall_seconds": 2.83,
-      "peak_rss_mib": 1687,
-      "tensor_count": 339,
-      "command": "llama-cli -m $MODEL -ngl 0 -t 4 -c 2048 -n 1 -p hi -st --no-warmup"
-    },
-    "demo_run": {
-      "prompt": "你好，请用一句话介绍你自己。",
-      "output": "我是阿里云上的Qwen，我是一个大型语言模型，可以回答各种问题、撰写文档、创作故事等。",
-      "prompt_tps": 67.5,
-      "gen_tps": 17.7,
-      "wall_seconds": 4.37,
-      "peak_rss_mib": 1799,
-      "command": "llama-cli -m $MODEL -ngl 0 -t 4 -c 4096 -n 48 -p '你好，请用一句话介绍你自己。' -st --no-warmup"
-    },
-    "verdict": {
-      "environment_correct": true,
-      "model_loads_stably": true,
-      "no_fallback": true,
-      "note": "环境验证通过：模型可稳定加载、推理输出语义连贯、全程 CPU 后端无回退。Demo 的端到端速率（17.7 t/s）低于 llama-bench 的纯解码速率（17.85 t/s 量级），差额来自采样与首 token，符合预期。"
-    }
+  "multi_turn": {
+   "status": "todo",
+   "note": "多轮对话场景未采集 —— 需要客户端保持 session 累积上下文。该项对评估 Prefix Cache 收益必要"
   }
+ },
+ "curves": {
+  "long_context": [
+   {
+    "ctx": 2048,
+    "prefill_tps": 59.65,
+    "decode_tps": 13.03,
+    "kv_gib": 0.004,
+    "command": "llama-bench -m $MODEL -ngl 0 -o json -t 4 -p 512 -n 64 -d 2048 -r 3",
+    "command_source": "recorded",
+    "prompt_tokens": 512,
+    "gen_tokens": 64,
+    "cache_type_k": "f16",
+    "cache_type_v": "f16",
+    "kv_gib_source": "derived",
+    "kv_gib_note": "由几何公式推算（28 层 × 2 KV heads × head_dim 128 × f16），未做内存快照实测"
+   },
+   {
+    "ctx": 8192,
+    "prefill_tps": 34.65,
+    "decode_tps": 7.22,
+    "kv_gib": 0.016,
+    "command": "llama-bench -m $MODEL -ngl 0 -o json -t 4 -p 512 -n 64 -d 8192 -r 3",
+    "command_source": "recorded",
+    "prompt_tokens": 512,
+    "gen_tokens": 64,
+    "cache_type_k": "f16",
+    "cache_type_v": "f16",
+    "kv_gib_source": "derived"
+   },
+   {
+    "ctx": 16384,
+    "prefill_tps": 22.65,
+    "decode_tps": 4.19,
+    "kv_gib": 0.031,
+    "command": "llama-bench -m $MODEL -ngl 0 -o json -t 4 -p 512 -n 64 -d 16384 -r 3",
+    "command_source": "recorded",
+    "prompt_tokens": 512,
+    "gen_tokens": 64,
+    "cache_type_k": "f16",
+    "cache_type_v": "f16",
+    "kv_gib_source": "derived"
+   }
+  ]
+ },
+ "memory": {
+  "breakdown_gib": {
+   "main_weight": 1.039,
+   "mmproj": 0.0,
+   "kv_cache": 0.031,
+   "runtime_buffer": 0.15
+  },
+  "peak_used_mib": 1974,
+  "vram_total_mib": 16384,
+  "safety_margin_mib": 14410,
+  "config": "CPU -ngl 0 -t 4 -c 8192, F16 KV",
+  "measure_method": "llama-cli 真实推理 + /usr/bin/time -l (maximum resident set size)",
+  "peak_rss_by_ctx": {
+   "8192": 1974,
+   "16384": 2199
+  },
+  "note": "峰值 RSS 含权重 1.04 GiB + KV + 运行时开销 0.79 GiB；16K 时因 KV 翻倍增至 2.20 GiB"
+ },
+ "extra": {
+  "thermal": {
+   "temp_c": null,
+   "note": "需 powermetrics 采集"
+  },
+  "prefill_flash_attn": {
+   "prefill_tps": 77.88,
+   "source": "/tmp/qwen15b_bench/04_fa_on.json"
+  },
+  "tunnel": {},
+  "spec_mtp": {},
+  "cross_check": {
+   "llama_bench_tg_depth2048": 13.15,
+   "llama_cli_generation_depth2048": 8.4,
+   "llama_cli_generation_short": 19.1,
+   "note": "llama-bench 的 tg 只测纯解码吞吐（不采样、不含首 token）；llama-cli 的 Generation 是端到端墙钟速率，含采样与首 token 开销。两者相差约 35%，报告中必须区分口径。"
+  },
+  "load_sensitivity": {
+   "clean_load_decode_tps_4t": 17.85,
+   "clean_load_prefill_tps_4t": 78.42,
+   "loaded_decode_tps_4t": 9.19,
+   "loaded_prefill_tps_4t": 16.55,
+   "loaded_decode_tps_2t": 14.28,
+   "note": "CPU 后端的性能强依赖机器空闲度：共享内存带宽与物理核时，他人负载会直接压缩可用带宽。这是 CPU 后端与独显后端的本质差异 ——独显有独立显存带宽，不受主机其他进程影响。因此 CPU 场景下的性能采集必须记录并报告当时的系统负载。"
+  },
+  "depth_matched_comparison": {
+   "design": "唯一变量 = KV 精度；其余固定（-ngl 0 -t 4 -p 512 -n 64 -d 8192）",
+   "batches": [
+    {
+     "label": "低负载窗口",
+     "load_avg": "<2",
+     "collected": "2026-10-14 19:37",
+     "f16_decode_tps": 7.22,
+     "q8_0_decode_tps": 7.89,
+     "delta_pct": 9.28,
+     "source": "/tmp/qwen15b_bench/02_depth.json vs 08_d8192_kvq8.json"
+    },
+    {
+     "label": "中等负载窗口",
+     "load_avg": "≈10（2.5× 物理核）",
+     "collected": "2026-10-16 08:20-08:32",
+     "f16_decode_tps": 4.82,
+     "q8_0_decode_tps": 6.13,
+     "delta_pct": 27.18,
+     "source": "/tmp/qwen15b_bench/20_d8192_f16.json vs 21_d8192_q8q8.json"
+    },
+    {
+     "label": "高负载窗口（数据不可用）",
+     "load_avg": "≈22（5.5× 物理核）",
+     "collected": "2026-10-16 08:48",
+     "f16_decode_tps": null,
+     "q8_0_decode_tps": null,
+     "q8_0_q4_0_decode_tps": 2.76,
+     "delta_pct": null,
+     "source": "/tmp/qwen15b_bench/22_d8192_q8q4.json",
+     "excluded": true,
+     "exclude_reason": "采集时负载 22（5.5× 物理核），绝对值为该批次的 43%，不满足 measurement_validity 声明的「负载 < 物理核数」前提，因此**不纳入结论**，仅作为「负载污染」的实例保留。"
+    }
+   ],
+   "finding": "KV 量化的收益随内存带宽竞争加剧而放大：低负载下 +9.3%，中等负载下 +27.2%。物理解释：KV 读写与权重读取抢同一份内存带宽，带宽越紧张，减少 KV 字节的相对价值越高。",
+   "implication": "在共享/繁忙的 CPU 机器上部署时，KV 量化的收益会比空闲机器上测得的更大 —— 这也意味着**基准数据必须在受控负载下采集**，否则优化收益会被系统性地高估或低估。",
+   "absolute_values_caveat": "两批数据的绝对值不可跨批比较（负载不同）；只有**批内**的 f16↔q8_0 对照才有意义。报告中的绝对性能数字一律取自低负载窗口那一批。",
+   "quality_gate": "所有进入结论的测量批次必须满足：1 分钟负载 < 物理核数。不满足的批次标记 excluded=true 并保留原始文件，以便日后在空闲窗口重测 —— 删掉数据比留着标注更危险。"
+  },
+  "thread_scaling": {
+   "config": "ctx 4096, depth 0, F16 KV",
+   "t1": {
+    "prefill": 32.03,
+    "decode": 9.49
+   },
+   "t2": {
+    "prefill": 55.28,
+    "decode": 15.18
+   },
+   "t4": {
+    "prefill": 78.42,
+    "decode": 17.85
+   },
+   "t8": {
+    "prefill": 75.53,
+    "decode": 13.03
+   },
+   "note": "4 线程（=物理核数）为最优点；8 逻辑线程反而下降 27%（Decode 17.85→13.03），因为超线程共享执行单元与访存端口，在访存密集的 GEMV 上形成竞争。这直接验证了「线程数存在最优值」这一 CPU 后端特性。",
+   "source": "/tmp/qwen15b_bench/01_threads.json",
+   "best_decode_tps": 17.85,
+   "best_threads": 4,
+   "decode_at_4t": 17.85,
+   "thread_scaling_kpi": 1.0
+  },
+  "context_scaling": {
+   "config": "4 线程，F16 KV，depth 扫描",
+   "rows": [
+    {
+     "depth": 0,
+     "decode_tps": 17.74
+    },
+    {
+     "depth": 2048,
+     "decode_tps": 13.03
+    },
+    {
+     "depth": 8192,
+     "decode_tps": 7.22
+    },
+    {
+     "depth": 16384,
+     "decode_tps": 4.19
+    }
+   ],
+   "note": "上下文从 0 增长到 16K，Decode 从 17.74 掉到 4.19 t/s（-76%）。这是 CPU 后端最关键的性能特征：KV 读写挤占本已紧张的内存带宽。",
+   "source": "/tmp/qwen15b_bench/02_depth.json",
+   "decode_at_depth0": 17.74,
+   "decode_at_depth8192": 7.22,
+   "ctx_decay_8k_kpi": 0.407
+  },
+  "prefill_kv_penalty": {
+   "finding": "KV 量化在 Prefill 阶段有显著代价：8K 深度下 Prefill 从 34.65 t/s 掉到 11.48 t/s（-67%），而 Decode 反而提升 9.3%。",
+   "measurements": {
+    "f16_kv": {
+     "prefill_tps": 34.65,
+     "decode_tps": 7.22,
+     "source": "/tmp/qwen15b_bench/02_depth.json (d=8192)"
+    },
+    "q8_0_kv": {
+     "prefill_tps": 11.48,
+     "decode_tps": 7.89,
+     "source": "/tmp/qwen15b_bench/08_d8192_kvq8.json (d=8192)"
+    }
+   },
+   "likely_cause": "Prefill 是 Compute-bound：8K 上下文下注意力是 O(n²)，KV 每被读一次就要反量化一次。CPU 算力本就紧张（4 核 AVX2），反量化的额外算力开销直接吃掉了 Prefill 的吞吐。Decode 则是 Memory-bound，每步只读一遍 KV，减少 KV 字节的收益大于反量化开销，因此净收益为正。",
+   "implication": "**KV 量化的收益方向取决于阶段**：它救 Decode（访存）但伤 Prefill（算力）。因此选择 KV 量化档位时必须同时看两个阶段的 KPI，只报 Decode 提升会掩盖 Prefill 的严重退化。",
+   "verification_needed": "两批数据采集间隔 32 分钟，虽同处低负载窗口，仍建议在同一会话内连续复测以排除漂移。复测命令：\n  llama-bench -m <model> -ngl 0 -t 4 -p 512 -n 64 -d 8192 -r 3\n  llama-bench -m <model> -ngl 0 -t 4 -p 512 -n 64 -d 8192 \\\n              -ctk q8_0 -ctv q8_0 -r 3",
+   "status": "measured_but_needs_same_session_recheck"
+  }
+ },
+ "measurement_protocol": {
+  "tool": "llama-bench",
+  "tool_version": "llama.cpp b9962-07d937828（AppleClang 16, CPU 后端）",
+  "statistic": "每个配置重复 3~5 次，取 llama-bench 的 avg_ts（算术均值）；离散度见原始 samples_ts",
+  "measurement_point": "进程内计时：不含 HTTP 传输、客户端排队与采样开销",
+  "backend": "cpu",
+  "backend_label": "CPU 后端",
+  "accel_flags": [
+   "-ngl",
+   "0"
+  ],
+  "threads": 4,
+  "model_placeholder_note": "命令中的 $MODEL 指主模型权重路径（见 §0 环境准备）",
+  "flags": [
+   {
+    "flag": "-p N",
+    "meaning": "Prefill 口径：一次性处理 N 个 token 的**纯 prompt 吞吐**，不含采样与首 token 排队"
+   },
+   {
+    "flag": "-n N",
+    "meaning": "Decode 口径：在已有上下文中自回归生成 N 个 token 的**稳态速率**，排除首 token"
+   },
+   {
+    "flag": "-d N",
+    "meaning": "上下文深度：测量前先用合成 token 把 KV Cache 填到 N，再执行本次 Prefill/Decode —— 模拟「对话已进行到第 N 个 token」"
+   },
+   {
+    "flag": "-t N",
+    "meaning": "线程数；CPU 后端的关键调优参数，本批固定为 4（= 物理核数）"
+   },
+   {
+    "flag": "-ngl 0",
+    "meaning": "显式钉死纯 CPU 后端。本机装了 Metal（Intel Iris），不写会静默走 GPU"
+   },
+   {
+    "flag": "-ctk/-ctv",
+    "meaning": "KV Cache 的 K/V 量化类型；对照组 f16（默认），实验组 q8_0"
+   },
+   {
+    "flag": "-r N",
+    "meaning": "重复次数（本批 3~5 次）"
+   },
+   {
+    "flag": "-o json",
+    "meaning": "结构化输出供框架解析；原始 stdout 落盘 output/<run>/raw/"
+   }
+  ],
+  "conventions": [
+   "llama-bench 的 Decode（tg）是**纯解码**吞吐：不含采样、不含首 token 排队，因此**高于**端到端墙钟速率。同机同配置实测 llama-bench 13.15 t/s vs llama-cli 8.4 t/s（相差 35%），引用时必须标明来源。",
+   "表中 TTFT 列为**推导值**（prompt_tokens ÷ prefill_tps），不是端到端实测的首 token 延迟；它代表「在已有 depth 上下文之上处理新 prompt」的耗时。",
+   "所有测量在同一台机器、同一构建、同一模型文件下完成；**唯一变量在每次对照中只有一项**（见各表的「对照条件」）。",
+   "采集窗口的 1 分钟系统负载 < 2（4 物理核）。负载超标的数据不纳入结论 —— 详见 device_*.yaml 的 measurement_validity 与 §0。"
+  ]
+ },
+ "environment_verification": {
+  "collected": "2026-10-16",
+  "activities": [
+   {
+    "activity": "设备连接",
+    "status": "pass",
+    "evidence": "在本机（macOS 14.6.1）直接运行，无需远程连接或端口转发"
+   },
+   {
+    "activity": "SDK / 驱动安装",
+    "status": "n/a",
+    "evidence": "CPU 后端无驱动概念；工具链用系统自带 AppleClang 16，无需额外安装"
+   },
+   {
+    "activity": "Runtime 部署",
+    "status": "pass",
+    "evidence": "llama.cpp build/bin 下 llama-cli / llama-bench / llama-server 均可执行（commit 07d937828）"
+   },
+   {
+    "activity": "编译环境配置",
+    "status": "pass",
+    "evidence": "cmake + AppleClang 16，-O3 -mavx2 -mfma；详见 device_*.yaml 的 build_command"
+   },
+   {
+    "activity": "模型加载验证",
+    "status": "pass",
+    "evidence": "1.04 GiB 权重加载 + 1 token 生成共 2.83 s（墙钟），峰值 RSS 1687 MiB，无报错"
+   },
+   {
+    "activity": "Demo 运行验证",
+    "status": "pass",
+    "evidence": "中文单轮对话输出连贯；Prompt 67.5 t/s / Generation 17.7 t/s；峰值 RSS 1799 MiB"
+   }
+  ],
+  "model_load": {
+   "wall_seconds": 2.83,
+   "peak_rss_mib": 1687,
+   "tensor_count": 339,
+   "command": "llama-cli -m $MODEL -ngl 0 -t 4 -c 2048 -n 1 -p hi -st --no-warmup"
+  },
+  "demo_run": {
+   "prompt": "你好，请用一句话介绍你自己。",
+   "output": "我是阿里云上的Qwen，我是一个大型语言模型，可以回答各种问题、撰写文档、创作故事等。",
+   "prompt_tps": 67.5,
+   "gen_tps": 17.7,
+   "wall_seconds": 4.37,
+   "peak_rss_mib": 1799,
+   "command": "llama-cli -m $MODEL -ngl 0 -t 4 -c 4096 -n 48 -p '你好，请用一句话介绍你自己。' -st --no-warmup"
+  },
+  "verdict": {
+   "environment_correct": true,
+   "model_loads_stably": true,
+   "no_fallback": true,
+   "note": "环境验证通过：模型可稳定加载、推理输出语义连贯、全程 CPU 后端无回退。Demo 的端到端速率（17.7 t/s）低于 llama-bench 的纯解码速率（17.85 t/s 量级），差额来自采样与首 token，符合预期。"
+  }
+ }
 }

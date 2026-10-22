@@ -9,8 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **量化策略**：`Q4_K_M` 甜点档位主模型 + `Q4_0` MTP Draft 投机解码加速
 
 ## 云端算力登录信息
-- **SSH 指令**：`ssh -p 37607 root@connect.cqa1.seetacloud.com`
-- **密码**：`4g3+Kjz0CNHl`
+- **SSH 指令**：`ssh -p 21204 root@connect.cqa1.seetacloud.com`
+- **密码**：`rJorPaLo8wfZ`
 - **主要工作目录**：数据盘 `/root/autodl-tmp/`（模型在 `/root/autodl-tmp/models/`，源码在 `/root/autodl-tmp/llama.cpp/`）
 
 ## 常用服务管理与开发命令

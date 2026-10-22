@@ -49,6 +49,18 @@ python3 -m perfkit <cmd> --help    # 某子命令的参数
 
 四份配置分工明确，改哪份取决于你要换什么。
 
+当前仓库里有**五套参考配置**（同一套流程代码，只换 YAML）：
+
+| 目录 | 后端 | 演示的重点 |
+| :--- | :--- | :--- |
+| `configs/` | NVIDIA GPU | 纯文本：显存墙、KV 量化、MTP、并发 |
+| `configs/qwen3.8-27b-multimodal/` | NVIDIA GPU | 多模态：图像 token 杠杆、两段 TTFT、分辨率—质量 |
+| `configs/qwen3.8-27b-multimodal-uplimit/` | NVIDIA GPU | 极限：草稿深度拐点、步耗时模型 |
+| `configs/qwen3.8-27b-multimodal-newarch/` | NVIDIA GPU | 可达性：位宽—质量曲线、目标反解 |
+| `configs/qwen2.5-1.5b-cpu/` | x86 CPU | CPU：线程缩放、负载敏感性、深度衰减 |
+
+每套目录自带 `ledger.json`（实测台账），互不干扰。
+
 ### 2.1 `model_*.yaml` —— 模型画像
 
 ```yaml
@@ -763,6 +775,42 @@ python3 scripts/selftest.py      # 或 make selftest
 **为什么需要这个**：性能框架最危险的失败模式是「算错了但看起来合理」。  
 例如 KV 公式少乘一个 2，结果只是数字偏小一半，报告照样生成，  
 但结论已经错了。因此每个公式都有独立的手算对照。
+
+### 9.1 报告一致性审计（`scripts/audit_reports.py`）
+
+自检校验的是**公式**；审计校验的是**口径**。同一个指标会在五处出现：
+
+```text
+台账 → baseline.json → optimize.json → verify.json → report.md → charts.html
+```
+
+任何一处口径不同（跨会话、扁平值 vs 场景值、不同 bundle），
+都会让报告自相矛盾，而这种矛盾**读起来像结论、查起来要半小时**。
+
+```bash
+python3 scripts/audit_reports.py            # 全部运行
+python3 scripts/audit_reports.py --run <id> # 单个
+make audit                                  # 同上
+```
+
+| 检查 | 内容 | 本项目实际抓到的问题 |
+| :--- | :--- | :--- |
+| C1 | 图表「优化基线」柱 == 报告 §5.1 的 before（差 <2%） | 图表取台账 `baseline_native`（上一会话 92.65）、候选取本轮 measured（91.56），得出「优化后变慢」的假象；同配置跨会话实测差 **10.7%** |
+| C2 | 报告 §2.2 场景表 == 台账 `scenarios[*].decode_tps` | — |
+| C3 | verify 的 before == 台账对应场景值 | CPU 的 `prefill_tps` 绑 `long_ctx_8k_kvq8`，却取到 `long_ctx_8k` 的扁平值 34.65（正确 11.48，**差 3×**） |
+| C4 | 无 `None` / `nan` / 未知占位符（反引号内与合法占位符除外） | — |
+| C5 | 投机配置必须标注「口径失效」 | 投机解码下「t/s × 权重字节」算出的带宽 >100%（本项目 153%），不能读作突破物理带宽 |
+| C6 | 结论摘要的章节序号连续 | newarch 曾出现两个「五、」 |
+| C7 | 报告 §6.1 验收表 == verify.json 的逐项判定 | — |
+
+**三条硬规则**（任一违反即 FAIL）：
+
+1. **同会话**：基线与候选必须在同一会话内测。跨会话漂移可达 10~21%，
+   大于多数配置差异。
+2. **场景绑定**：KPI 绑了场景就取 `by_scenario[该场景]`；
+   扁平值可能是别的场景的拷贝。
+3. **口径失效要标注**：投机解码让「每步读一遍权重」不再成立，
+   带宽类指标必须显式标 `invalid`，而不是算一个 >100% 的数。
 
 ---
 

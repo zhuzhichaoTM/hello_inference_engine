@@ -488,6 +488,16 @@ def run_live(cfg: PerfConfig, outdir: Path, scenarios: list[dict],
                 entry["decode_seconds"] = round(
                     sc["gen_tokens"] / entry["decode_tps"], 2)
             results[sc["id"]] = entry
+
+        # 深度扫描（可选）：受控实验，只改 -d，产出 KV 随 ctx 的衰减曲线。
+        # 放在场景循环之后、采样线程停止之前 —— 曲线点也要计入显存峰值。
+        _sweep_cfg = (cfg.task.get("curves") or {}).get("long_context") or {}
+        if _sweep_cfg.get("depths"):
+            print("  · 深度扫描（只改 -d，其余与场景一致）")
+            depth_rows = _run_depth_sweep(cfg, backend, bench, outdir,
+                                          _sweep_cfg, kv_k, kv_v, extra_flags)
+            if depth_rows:
+                results["_curves"] = {"long_context": depth_rows}
     finally:
         peak_stats = peaks.stop()
 
@@ -566,11 +576,13 @@ def run_live(cfg: PerfConfig, outdir: Path, scenarios: list[dict],
     if results and all(r.get("command") for r in results.values()):
         protocol["commands_recorded"] = True
 
+    curves = results.pop("_curves", {})
     return {
         "mode": "live",
         "backend": backend.kind,
         "backend_label": backend.label,
         "protocol": protocol,
+        "curves": curves,
         "meta": {**cfg.model, "device": cfg.device.get("name"),
                  "engine_commit": cfg.device.get("software", {}).get("engine_commit"),
                  "bench_bin": bench,
@@ -645,6 +657,13 @@ def _derive_extra(cfg: PerfConfig, data: dict) -> dict:
                 f"{_bw/1e9:.0f} GB/s")
 
     if not extra.get("long_context_curve"):
+        # live 模式若跑了深度扫描，曲线就在 data["curves"] 里 —— 优先用它，
+        # 因为它才是「只改 -d」的受控实验；场景矩阵里的 depth 点没有。
+        _cv = (data.get("curves") or {}).get("long_context") or []
+        if _cv:
+            extra["long_context_curve"] = _cv
+            extra["long_context_source"] = "live 深度扫描（只改 -d，其余固定）"
+            return extra
         rows = []
         for sid, s in scs.items():
             if s.get("status") == "todo" or not s.get("depth"):
@@ -667,6 +686,65 @@ def _derive_extra(cfg: PerfConfig, data: dict) -> dict:
             extra["long_context_curve"] = rows
             extra["long_context_source"] = "live 推导：场景矩阵里带 depth 的点"
     return extra
+
+
+def _run_depth_sweep(cfg: PerfConfig, backend, bench: str, outdir: Path,
+                     sweep: dict, kv_k: str | None, kv_v: str | None,
+                     extra_flags: list[str] | None) -> list[dict]:
+    """
+    深度扫描：同一配置只改 `-d`（上下文深度），产出 KV 随 ctx 的衰减曲线。
+
+    为什么单独跑而不是混进场景矩阵：
+      场景矩阵回答「真实业务下有多快」，每个场景有自己的 prompt/gen 组合；
+      深度扫描是**受控实验** —— 除深度外一切固定，专门回答
+      「KV 增长让速率掉多少」。两者的 prompt/gen 口径不同，混在一起会让
+      「场景表」和「曲线」互相污染。
+
+    没有这条曲线时，报告 §3.6（KV 剖面）与 §3.10 的根因树都只能留空 ——
+    而 KV 恰恰是长上下文任务的第一性瓶颈。因此 live 模式必须有它。
+    """
+    depths = sweep.get("depths") or []
+    if not depths:
+        return []
+    rows: list[dict] = []
+    for d in depths:
+        sc = {
+            "id": f"depth_{d}",
+            "prompt_tokens": sweep.get("prompt_tokens", 512),
+            "gen_tokens": sweep.get("gen_tokens", 64),
+            "depth": d,
+            "repetitions": sweep.get("repetitions", 3),
+        }
+        cmd = backend.bench_command(bench, cfg.model["file"], sc,
+                                    kv_k=kv_k, kv_v=kv_v, extra=extra_flags)
+        t0 = time.time()
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+        (outdir / "raw" / f"depth_{d}.log").write_text(
+            f"$ {' '.join(cmd)}\n\n--- stdout ---\n{proc.stdout}\n"
+            f"--- stderr ---\n{proc.stderr}\n", encoding="utf-8")
+        entry: dict = {"ctx": d, "command": " ".join(cmd),
+                       "command_source": "recorded",
+                       "wall_seconds": round(time.time() - t0, 2),
+                       "prompt_tokens": sc["prompt_tokens"],
+                       "gen_tokens": sc["gen_tokens"]}
+        rows_ = _parse_bench_json(proc.stdout)
+        for r in rows_:
+            if r.get("n_prompt"):
+                entry["prefill_tps"] = round(float(r["avg_ts"]), 2)
+            if r.get("n_gen"):
+                entry["decode_tps"] = round(float(r["avg_ts"]), 2)
+        if entry.get("prefill_tps") is None and entry.get("decode_tps") is None:
+            entry["status"] = "failed"
+            entry["note"] = (proc.stderr or proc.stdout)[-300:]
+        # KV 容量：live 模式没有逐点内存快照，用几何公式补并标注来源
+        from ..config import kv_cache_bytes
+        entry["kv_gib"] = round(
+            kv_cache_bytes(cfg.model, d, *cfg.kv_bits()) / 1024 ** 3, 3)
+        entry["kv_gib_source"] = "derived"
+        rows.append(entry)
+        print(f"    depth {d:>6}  prefill {entry.get('prefill_tps', '—')}"
+              f"  decode {entry.get('decode_tps', '—')}")
+    return rows
 
 
 def _filter_scenarios(scenarios: list[dict], only: str | None) -> list[dict]:

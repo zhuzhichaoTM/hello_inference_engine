@@ -1,0 +1,810 @@
+{
+ "$comment": "多模态专项运行台账：基线 = 报告 report_qwen3.8-27b-decode-opt.md 的 B6_mmproj（挂载 mmproj 后的最终效果）；优化后 = FINAL_CONFIRM。全部数字来自 /root/autodl-tmp/mmopt/mmbench.py 的真机采集。",
+ "meta": {
+  "model": "Qwen3.8-27B",
+  "quant": "Q4_K_M (UD)",
+  "engine": "llama.cpp 547208d (CUDA 12.8, sm_89)",
+  "device": "NVIDIA GeForce RTX 4090 (24 GiB)",
+  "driver": "570.124.04",
+  "cuda": "12.8",
+  "os": "Ubuntu 22.04.5 LTS",
+  "backend": "gpu",
+  "backend_label": "NVIDIA 独显 (CUDA)",
+  "collected": "2026-10-19",
+  "host_cpu": "AMD EPYC (208 vCPU 可见, 96 线程默认)",
+  "measurement_note": "显存/功耗/温度由 nvidia-smi 0.5 s 采样；吞吐为 llama-server 端到端 SSE 流式计时"
+ },
+ "theoretical": {
+  "vram_bandwidth_gbps": 1008.0,
+  "weight_gib": 14.997,
+  "file_gib": 15.324,
+  "decode_tps_upper_bound": 62.6,
+  "decode_tps_upper_bound_formula": "1008 GB/s ÷ 16.10 GB（十进制 GB）",
+  "measured_read_bw_gbps": 883.16,
+  "decode_tps_upper_bound_measured_bw": 54.85,
+  "confidence": "derived"
+ },
+ "baseline_native": {
+  "config": "B6_mmproj（-ngl 99 --mmproj mmproj-F16 --parallel 2 --ctx-size 65536 --cache-type-k q8_0 --cache-type-v q4_0 --flash-attn on）",
+  "decode_tps": 48.72,
+  "bandwidth_utilization": 0.814,
+  "source": "report_qwen3.8-27b-decode-opt.md §4.1 B6_mmproj（E_mmproj_single）+ 本次 BASE_RESCORE 复测",
+  "confidence": "measured",
+  "speculative": false,
+  "speculative_note": "**该基线值是否来自含投机解码的配置** —— 决定「t/s × 权重字节」能否当带宽用。True 时一次权重读取产出 mean_len 个 token，反推值会被放大，不能与纯读带宽比较。"
+ },
+ "scenarios": {
+  "short_chat": {
+   "prompt_tokens": 72,
+   "gen_tokens": 128,
+   "parallel": 2,
+   "prefill_tps": 209.6,
+   "decode_tps": 48.88,
+   "ttft_ms": 343.5,
+   "e2e_seconds": 2.94,
+   "config": "B6_mmproj（多模态基线，无 MTP）",
+   "source": "raw/BASE_RESCORE.json",
+   "confidence": "measured",
+   "command": "llama-server -m $MODEL --mmproj $MMPROJ_F16 -ngl 99 --parallel 2 --ctx-size 65536 -ctk q8_0 -ctv q4_0 --flash-attn on\npython3 mmbench.py --config case_BASE_RESCORE.json   # 场景 text_short，6 次取中位数",
+   "command_source": "recorded",
+   "caveat": "短 prompt 的 prefill_tps 被固定开销主导（HTTP/Tokenize/调度），不代表 Prefill 能力；判断 Prefill 用 text_32k"
+  },
+  "long_ctx": {
+   "prompt_tokens": 28372,
+   "gen_tokens": 64,
+   "parallel": 2,
+   "prefill_tps": 2653.9,
+   "decode_tps": 39.25,
+   "decode_tps_32k": 39.25,
+   "ttft_ms": 10690.7,
+   "config": "B6_mmproj（多模态基线）",
+   "source": "raw/BASE_RESCORE.json",
+   "confidence": "measured",
+   "caveat": "prompt 实测 28,372 token；--parallel 2 时单槽 n_ctx=32768，因此这是**单槽能容纳的最大量级**，不是 64K",
+   "command": "同上服务端\npython3 mmbench.py --config case_BASE_RESCORE.json   # 场景 text_32k，28,372 token prompt",
+   "command_source": "recorded"
+  },
+  "concurrent_2": {
+   "prompt_tokens": 1068,
+   "gen_tokens": 128,
+   "parallel": 2,
+   "decode_tps": 40.47,
+   "decode_tps_system": 32.6,
+   "per_slot_tps": [
+    40.47,
+    40.45
+   ],
+   "config": "B6_mmproj（两路均为带图请求）",
+   "source": "raw/BASE_RESCORE.json",
+   "confidence": "measured",
+   "caveat": "两路各带 1 张 1024px / 2048px 图（未限 image-max-tokens，2048px 图占 4140 token）",
+   "command": "同上服务端\npython3 mmbench.py --config case_BASE_RESCORE.json   # 场景 vis_conc2：两路各带图（1024px + 2048px）",
+   "command_source": "recorded"
+  },
+  "vis_1024": {
+   "prompt_tokens": 1068,
+   "gen_tokens": 128,
+   "parallel": 2,
+   "ttft_ms": 885.1,
+   "decode_tps": 47.72,
+   "config": "B6_mmproj（mmproj-F16，未限 image-max-tokens）",
+   "source": "raw/BASE_RESCORE.json",
+   "confidence": "measured",
+   "caveat": "1024×1024 图 → 1024 image tokens + 44 文本 token",
+   "command": "同上服务端\npython3 mmbench.py --config case_BASE_RESCORE.json   # 场景 vis_1024：1024×1024 发票图",
+   "command_source": "recorded"
+  },
+  "vis_2048": {
+   "prompt_tokens": 4140,
+   "gen_tokens": 128,
+   "parallel": 2,
+   "ttft_ms": 3536.3,
+   "decode_tps": 47.08,
+   "config": "B6_mmproj（mmproj-F16，未限 image-max-tokens）",
+   "source": "raw/BASE_RESCORE.json",
+   "confidence": "measured",
+   "caveat": "2048×2048 图 → 4096 image tokens（**是 1024px 的 4×**）；TTFT 3.5 s 的主因是文本侧 prefill 而非 ViT",
+   "command": "同上服务端\npython3 mmbench.py --config case_BASE_RESCORE.json   # 场景 vis_2048：2048×2048 场景图（4096 image token）",
+   "command_source": "recorded"
+  },
+  "vis_long32k": {
+   "prompt_tokens": 29403,
+   "gen_tokens": 64,
+   "parallel": 2,
+   "ttft_ms": 10906.3,
+   "decode_tps": 38.94,
+   "config": "B6_mmproj（图 + 28K 文本）",
+   "source": "raw/BASE_RESCORE.json",
+   "confidence": "measured",
+   "caveat": "图 1024px（1024 token）+ 28K 文本，合计 29,403 token",
+   "command": "同上服务端\npython3 mmbench.py --config case_BASE_RESCORE.json   # 场景 vis_long32k：1024px 图 + 28K 文本",
+   "command_source": "recorded"
+  },
+  "quality_ocr": {
+   "items": 8,
+   "pass": 8,
+   "config": "B6_mmproj",
+   "source": "raw/BASE_RESCORE.json",
+   "confidence": "measured",
+   "caveat": "8 项：纯色识别、OCR 编号、图形计数、发票金额/编号/数量、场景编号×2",
+   "command": "同上服务端\npython3 mmbench.py --config case_BASE_RESCORE.json   # 场景 quality（8 项）",
+   "command_source": "recorded"
+  },
+  "quality_hard": {
+   "items": 7,
+   "pass": 5,
+   "config": "B6_mmproj",
+   "source": "raw/BASE_RESCORE.json",
+   "confidence": "measured",
+   "caveat": "7 项：1600px 密集表格 3 项 + 1200px 10×10 网格 2 项 + 24K 文本 5 针 + 图+20K 文本混合",
+   "command": "同上服务端\npython3 mmbench.py --config case_BASE_RESCORE.json   # 场景 hard_quality（7 项）",
+   "command_source": "recorded"
+  },
+  "kv_stress": {
+   "items": 3,
+   "pass": 3,
+   "config": "B6_mmproj（q8_0/q4_0 KV）",
+   "source": "raw/BASE_RESCORE.json",
+   "confidence": "measured",
+   "caveat": "24K 文本里埋 20 条同类仓库码，逐条精确检索 3 条",
+   "command": "同上服务端（q8_0/q4_0）；对照跑 case_K_q4q4 / K_q8q8 / K_f16\npython3 mmbench.py --config case_BASE_RESCORE.json   # 场景 kv_stress（3 项）",
+   "command_source": "recorded"
+  },
+  "soak_30min": {
+   "prompt_tokens": 1068,
+   "gen_tokens": 64,
+   "parallel": 2,
+   "decode_tps": 64.0,
+   "decode_tps_system": 37.25,
+   "duration_s": 900.6,
+   "rounds": 205,
+   "config": "最终配置 B9_final（p2/64K，cap 1024，mtmd 256，n-max 2，主/draft KV 均 q4_0）",
+   "source": "raw/soak_final.json（mmbench soak.py：每轮 2 路并发，1 图 + 1 文本）",
+   "confidence": "measured",
+   "command": "python3 soak.py 900 raw/soak_final.json",
+   "command_source": "recorded",
+   "stability": {
+    "system_tps_median": 37.25,
+    "ttft_ms_median": 2399.2,
+    "vram_mib_min": 19827.0,
+    "vram_mib_max": 19953.0,
+    "vram_drift_mib": 126.0,
+    "temp_max_c": 69.0,
+    "power_max_w": 348.73,
+    "leak_observed": false,
+    "throttle_observed": false
+   },
+   "caveat": "时长 15 分钟（不是 30 分钟）；负载是「1 路 1024px 图 + 1 路 2K 文本」，比纯文本压测更接近真实多模态业务"
+  }
+ },
+ "curves": {
+  "long_context": [
+   {
+    "ctx": 3641,
+    "prefill_tps": 2417.0,
+    "decode_tps": 47.14,
+    "kv_gib": 0.062,
+    "kv_gib_source": "derived",
+    "command": "python3 mmbench.py --config case_BASE_DEPTH.json   # depth_sweep，目标深度 4096",
+    "command_source": "recorded"
+   },
+   {
+    "ctx": 14550,
+    "prefill_tps": 2776.5,
+    "decode_tps": 42.9,
+    "kv_gib": 0.249,
+    "kv_gib_source": "derived",
+    "command": "python3 mmbench.py --config case_BASE_DEPTH.json   # depth_sweep，目标深度 16384",
+    "command_source": "recorded"
+   },
+   {
+    "ctx": 24846,
+    "prefill_tps": 2688.6,
+    "decode_tps": 40.7,
+    "kv_gib": 0.425,
+    "kv_gib_source": "derived",
+    "command": "python3 mmbench.py --config case_BASE_DEPTH.json   # depth_sweep，目标深度 28000",
+    "command_source": "recorded"
+   }
+  ],
+  "image_tokens": [
+   {
+    "edge_px": 1,
+    "image_tokens": 0,
+    "prompt_tokens": 38,
+    "vision_encode_ms": null,
+    "prompt_ms": 216.8
+   },
+   {
+    "edge_px": 512,
+    "image_tokens": 256,
+    "prompt_tokens": 300,
+    "vision_encode_ms": 120,
+    "prompt_ms": 366.3
+   },
+   {
+    "edge_px": 1024,
+    "image_tokens": 1024,
+    "prompt_tokens": 1068,
+    "vision_encode_ms": 405,
+    "prompt_ms": 700.7
+   },
+   {
+    "edge_px": 2048,
+    "image_tokens": 4096,
+    "prompt_tokens": 4140,
+    "vision_encode_ms": 800,
+    "prompt_ms": 3471.8
+   }
+  ],
+  "image_cap_sweep": [
+   {
+    "cap": 256,
+    "image_tokens": 256,
+    "prompt_tokens": 300,
+    "ttft_ms": 631.1,
+    "quality_simple": "8/8"
+   },
+   {
+    "cap": 512,
+    "image_tokens": 512,
+    "prompt_tokens": 528,
+    "ttft_ms": 897.2,
+    "quality_simple": "8/8",
+    "quality_hard": "5/7"
+   },
+   {
+    "cap": 768,
+    "image_tokens": 768,
+    "prompt_tokens": 773,
+    "ttft_ms": 912.95,
+    "quality_simple": "8/8",
+    "quality_hard": "6/7"
+   },
+   {
+    "cap": 1024,
+    "image_tokens": 1024,
+    "prompt_tokens": 1068,
+    "ttft_ms": 1033.75,
+    "quality_simple": "8/8",
+    "quality_hard": "6/7"
+   },
+   {
+    "cap": 1280,
+    "image_tokens": 1280,
+    "prompt_tokens": 1269,
+    "ttft_ms": 1341.35,
+    "quality_simple": "8/8"
+   }
+  ],
+  "long_context_final": [
+   {
+    "ctx": 32768,
+    "prefill_tps": 2372.9,
+    "decode_tps": 55.7,
+    "kv_gib": 0.56
+   },
+   {
+    "ctx": 53178,
+    "prefill_tps": 2206.2,
+    "decode_tps": 47.81,
+    "kv_gib": 0.91
+   }
+  ]
+ },
+ "memory": {
+  "vram_total_mib": 24564,
+  "peak_used_mib": 20452,
+  "safety_margin_mib": 4112,
+  "config": "FINAL（mmproj-Q8 + MTP nmax2 + draft KV q4_0/q4_0 + 主 KV q4_0/q4_0 + p2/64K）",
+  "measure_method": "nvidia-smi --query-gpu=memory.used 0.5 s 采样，取进程生命周期最大值",
+  "baseline_peak_mib": 19085,
+  "baseline_peak_config": "B6_mmproj（--parallel 2 --ctx-size 65536 -ctk q8_0 -ctv q4_0 --mmproj mmproj-F16，无 MTP）",
+  "breakdown_gib": {
+   "main_weights": 14.997,
+   "mmproj": 0.583,
+   "draft_weights": 1.276,
+   "ssm_state": 0.14,
+   "kv_cache": 1.13,
+   "runtime_buffers": 0.35,
+   "total": 18.47
+  },
+  "breakdown_source": {
+   "main_weight": "GGUF 张量表逐张量累加（剔除未启用的 blk.64）",
+   "mmproj": "mmproj-Q8_0.gguf 文件大小 625,708,608 B",
+   "draft_mtp": "mtp-Qwen3.8-27B-Q4_0.gguf 文件大小 1,369,590,656 B",
+   "ssm_state": "几何公式（48 层 × inner 6144 × state 128，f16，×2 槽位）",
+   "kv_cache": "几何公式（16 全注意力层 × 4 KV 头 × 256 × 4.5/4.5 bit × 2 槽 × 32768）",
+   "runtime_buffer": "残差（实测峰值 − 上述各项）",
+   "total_note": "合计是 nvidia-smi 实测峰值 20,452 MiB（三次运行的最大值，中位 19,977）；分项为推导值，二者相差 9.6%，说明预算模型可用于可行性判断，但不能用于「还剩多少 MiB」的精确判定"
+  },
+  "power_w": 375.19,
+  "temp_c_range": [
+   51,
+   70
+  ],
+  "kv_crosscheck": {
+   "design": "**同配置仅换主模型 KV 精度**（q8_0/q4_0 → q4_0/q4_0）；其余参数完全相同：mmproj-Q8 + MTP n-max 2 + draft KV q4_0 + p2/64K + cap 1024 + mtmd 256 + b1024",
+   "q8q4_peak_mib": 20463,
+   "q4q4_peak_mib": 19951,
+   "measured_delta_mib": 512,
+   "geometric_delta_mib": 512,
+   "error_pct": 0.0,
+   "finding": "实测差 512 MiB，与几何预测 512 MiB **完全一致** —— 说明 KV 存储部分（16 层 × 4 KV 头 × 256 × 2 槽 × 32768 × 1 bit/元素差）的几何模型是准的；此前用「含工作区」的对照算出的 789 MiB 差额属于把工作区变化混进了 KV 存储。",
+   "source": "raw/KVAB_A.json（q8q4） / raw/KVAB_B.json（q4q4），各 4 次 28K + 3 次 2048px"
+  },
+  "mtp_peak_mib": 21505,
+  "mtp_peak_config": "B7（同上 + MTP n-max 3）—— 这一档才越线",
+  "by_config": {
+   "B6_mmproj": {
+    "peak_mib": 19085,
+    "config": "mmproj-F16 + q8_0/q4_0 + 双槽，无 MTP"
+   },
+   "B7_mtp": {
+    "peak_mib": 21505,
+    "config": "同上 + MTP n-max 3"
+   },
+   "B8_mmprojQ8": {
+    "peak_mib": 20608,
+    "config": "mmproj-Q8 + q8_0/q4_0 + MTP"
+   },
+   "B9_final": {
+    "peak_mib": 20452,
+    "typical_mib": 19917,
+    "config": "mmproj-Q8 + q4_0/q4_0 + draft q4_0 + n-max 2"
+   }
+  },
+  "peak_note": "三次独立运行（场景集不同）的峰值：19,917（全场景套件）/ 19,977（三次 2048px 图 + KV 检索）/ 20,452 MiB（含「双路各 14K 文本 + 1024px 图」的并发长文本场景）。**取最大值 20,452 作为声明峰值**（保守口径）；差异来自场景集与 CUDA Graph 捕获顺序，不是同一配置的纯重复测量。"
+ },
+ "extra": {
+  "vision": {
+   "mmproj_arch": "clip / qwen3vl_merger",
+   "image_size": 768,
+   "patch_size": 16,
+   "spatial_merge_size": 2,
+   "vision_layers": 27,
+   "vision_embedding_length": 1152,
+   "projection_dim": 5120,
+   "tokens_formula": "(edge_px / 32)^2",
+   "baseline": {
+    "prompt_tokens": 1068,
+    "prompt_ms": 700.7,
+    "ttft_ms": 885.1
+   },
+   "finding": "多模态 TTFT 由**文本侧 prefill 的 image token 数**主导，不是 ViT 编码：1024px 时 ViT 约 405 ms、文本侧 1024 token 约 300 ms；2048px 时 ViT 800 ms、文本侧 4096 token 约 2700 ms。因此限制 image tokens 是最大的 TTFT 杠杆。"
+  },
+  "image_cap_quality": {
+   "design": "同一套 8 项简单题 + 7 项难题，仅改 --image-max-tokens",
+   "results": {
+    "512": {
+     "simple": "8/8",
+     "hard": "5/7"
+    },
+    "768": {
+     "simple": "8/8",
+     "hard": "6/7"
+    },
+    "1024": {
+     "simple": "8/8",
+     "hard": "6/7"
+    },
+    "1280": {
+     "simple": "8/8"
+    }
+   },
+   "finding": "cap 512 在 1200px 网格题上开始丢细节（F7 答错）；cap 768 与 1024 均 6/7，1024 稳定正确识别 F7 的形状；cap 1280 未带来额外收益。选定 1024。"
+  },
+  "fa_quants_ab": {
+   "design": "同配置（q8_0/q4_0 KV、MTP、p2/64K），stock 构建 vs 补编译 q8_0-q4_0 向量 kernel 的构建",
+   "stock_text_32k_decode_tps": [
+    67.92,
+    68.78,
+    73.86
+   ],
+   "rebuilt_text_32k_decode_tps": [
+    71.66,
+    68.42,
+    71.7
+   ],
+   "delta_pct": 4.19,
+   "finding": "补编译 q8_0-q4_0 的 FA 向量 kernel 只回收 4.2%，远低于旧报告估计的 12%；且该差异与 run-to-run 离散度（±4 t/s）同量级。**改用 q4_0/q4_0 后本项彻底失效**——q4_0-q4_0 在 stock 构建里已有原生向量 kernel。"
+  },
+  "stock_build_equivalence": {
+   "design": "最终配置分别跑 stock 构建与补编译构建",
+   "stock": {
+    "text_short": 90.8,
+    "text_32k": 64.59,
+    "vis_1024": 96.19,
+    "peak_mib": 19953
+   },
+   "rebuilt": {
+    "text_short": 92.65,
+    "text_32k": 67.12,
+    "vis_1024": 96.13,
+    "peak_mib": 19917
+   },
+   "finding": "两者在离散度内一致（Δ≤3.9%），且 stock 构建无 FA 回退警告 —— **最终方案不需要自定义编译**。"
+  },
+  "ctx_capacity": {
+   "design": "--parallel 2 --ctx-size 65536 下的单请求容量探测",
+   "n_ctx_slot": 32768,
+   "probes": [
+    {
+     "requested": 35466,
+     "ok": false,
+     "error": "exceeds the available context size (32768 tokens)"
+    },
+    {
+     "requested": 29274,
+     "ok": true
+    }
+   ],
+   "parallel1_probes": [
+    {
+     "requested": 35466,
+     "ok": true
+    },
+    {
+     "requested": 53178,
+     "ok": true
+    }
+   ],
+   "finding": "64K 是**总上下文**，--parallel 2 时每槽 32K。单请求 >32768 token 会被 400 拒绝。需要真 64K 单请求时必须 --parallel 1。"
+  },
+  "kv_precision_stress": {
+   "design": "24K 文本埋 20 条同类仓库码，逐条精确检索；同题面仅换 KV 精度",
+   "results": {
+    "q4_0/q4_0": "3/3",
+    "q8_0/q4_0": "3/3",
+    "q8_0/q8_0": "3/3",
+    "f16/f16": "3/3"
+   },
+   "finding": "三种量化档与 f16 一致（3/3），未检出 q4_0 对精确检索的损伤；但样本量小（3 题），只能说明「没有可测量的大幅退化」"
+  },
+  "ppl_kv": {
+   "design": "WikiText-2 raw test，ctx=512，40 chunks，仅改 KV 精度",
+   "f16_ppl": 5.8216,
+   "q4q4_ppl": 5.8229,
+   "delta_pct": 0.022,
+   "finding": "KV 降到 q4_0/q4_0 的 PPL 变化 +0.02%，在测量噪声（±0.137）内 —— 短上下文下 KV 精度对 PPL 无可见影响；该口径无法检验长上下文检索，需配合 kv_stress"
+  },
+  "mtp_acceptance": {
+   "config": "FINAL（n-max 2，draft KV q4_0/q4_0）",
+   "per_request": [
+    0.0,
+    0.63,
+    1.0
+   ],
+   "median": 0.63,
+   "mean_len": 2.2,
+   "finding": "n-max=2 时平均接受长度约 2.2（即每次权重读取产出 ~2.2 token）；n-max=3 时接受率 0.37~0.51、长度 2.1~2.5，但显存 +0.3~0.5 GiB。n-max=2 是显存与吞吐的平衡点。"
+  },
+  "soak": {
+   "config": "最终配置 B9_final（p2/64K，cap 1024，mtmd 256，n-max 2，主/draft KV 均 q4_0）",
+   "duration_s": 900.6,
+   "rounds": 205,
+   "ok_rounds": 205,
+   "workload": "每轮 2 路并发：1 路 1024px 图（64 token）+ 1 路 2K 文本（64 token），间隔 1 s",
+   "system_tps_median": 37.25,
+   "ttft_ms_median": 2399.2,
+   "decode_tps_median": 64.0,
+   "vram_mib_max": 19953.0,
+   "vram_mib_min": 19827.0,
+   "vram_drift_mib": 126.0,
+   "temp_c_max": 69.0,
+   "power_w_max": 348.73,
+   "finding": "15 分钟 205 轮全部成功；首轮与末轮的系统吞吐、TTFT 完全同量级（42.65 → 39.41 t/s，1,948 → 2,228 ms），显存漂移 126 MiB，最高温 69 °C —— 无泄漏、无降频、无 OOM。"
+  },
+  "multimodal_limitation": {
+   "test": "图 + 20K 文本混合检索（问题嵌在文本尾部）",
+   "result": "所有配置（f16/q8q8/q8q4/q4q4、mmproj F16/Q8、有无 cap）均答成图片里可见的 AUTH CODE，而非文本里的口令",
+   "finding": "图 + 20K 文本混合检索（问题嵌在文本尾部）在所有配置下—— f16 / q8q8 / q8q4 / q4q4、mmproj F16 / Q8、有无 cap —— 都答成图片里可见的 AUTH CODE，而不是文本里的口令。**基线同样失败**，因此这是模型在多模态长上下文下对文本尾部的注意力分配问题，属于模型能力边界，不能归因于本次优化。"
+  },
+  "probe": {
+   "device": "NVIDIA GeForce RTX 4090",
+   "read_bw": 883.16,
+   "copy_bw": 827.56,
+   "gemv": 178.9,
+   "gemv_gflops": 683.0,
+   "declared_peak_bw": 1008.1,
+   "read_bw_pct_of_peak": 87.6,
+   "kernel_efficiency": 0.203,
+   "sm_count": 128,
+   "l2_mib": 72.0,
+   "vram_total_gib": 23.53,
+   "cmd": "/root/autodl-tmp/perf/cuda_bw_probe --weight-gib 15.0 --size-gib 4",
+   "note": "本次实例（2026-10-19）实测。纯读带宽 883.16 GB/s 是反推 Decode 上界的正确分母；标称 1008 GB/s 含 ECC/刷新/行冲突等不可达开销。GEMV 参考内核效率 20.3% 说明该参考实现很朴素，不能用它判断生产内核还有多少空间。"
+  },
+  "cross_check": {
+   "llama_bench_decode": 50.96,
+   "llama_server_decode": 49.21,
+   "delta_pct": -3.4,
+   "note": "llama-bench 的 tg 是纯解码（不含采样、HTTP、首 token）；llama-server 端到端含采样与传输。3.4% 的差额就是这部分开销 —— 引用时必须标明是哪个口径。"
+  },
+  "concurrent_2": {
+   "config": "B9_final（两路均带图：1024px + 2048px，cap 1024）",
+   "system_tps": 70.15,
+   "per_slot_tps": [
+    83.62,
+    78.73
+   ],
+   "baseline_system_tps": 32.6,
+   "baseline_config": "B6_mmproj（两路带图，2048px 未限 cap）",
+   "source": "raw/FINAL_CONFIRM.json / raw/BASE_RESCORE.json",
+   "note": "优化后每路仍是 78~84 t/s 的满速水平，系统吞吐 70.15 t/s 略低于纯文本并发（112.95），因为两路都要编码图像并 prefill 1024/1024 个图像 token"
+  },
+  "mtp_vs_parallel": {
+   "with_mtp": {
+    "decode_tps_system": 70.15,
+    "config": "B9_final（MTP n-max 2）"
+   },
+   "without_mtp": {
+    "decode_tps_system": 32.6,
+    "config": "B6_mmproj（无 MTP）"
+   },
+   "note": "两路均为带图请求。注意这组对照同时含其他变更（KV 精度、cap），因此不能把差额全归给 MTP；单流口径的 MTP 归因见 §5.1（48.88 → 92.65）"
+  },
+  "peak_points": [
+   {
+    "scenario": "纯文本 28K prompt（单槽）",
+    "config": "最终配置",
+    "peak_mib": 19829
+   },
+   {
+    "scenario": "1024px 图（1024 image token）",
+    "config": "最终配置",
+    "peak_mib": 19899
+   },
+   {
+    "scenario": "2048px 图（4096 image token，未限 cap）",
+    "config": "基线（不限分辨率）",
+    "peak_mib": 20711
+   },
+   {
+    "scenario": "2048px 图，cap 1024",
+    "config": "最终配置",
+    "peak_mib": 19905
+   },
+   {
+    "scenario": "双路带图并发（1024px + 2048px，cap 1024）",
+    "config": "最终配置",
+    "peak_mib": 19899
+   },
+   {
+    "scenario": "双路「14K 文本 + 1024px 图」并发",
+    "config": "最终配置",
+    "peak_mib": 20452
+   },
+   {
+    "scenario": "24K 文本 + 5 针检索",
+    "config": "最终配置",
+    "peak_mib": 20217
+   },
+   {
+    "scenario": "不限分辨率 + 双槽 + MTP（n-max 3）",
+    "config": "基线 + MTP",
+    "peak_mib": 21505
+   }
+  ],
+  "kv_ab_clean": {
+   "design": "同配置仅换主 KV 精度",
+   "q8q4": {
+    "text_32k_decode_tps": [
+     49.35,
+     52.6,
+     55.35,
+     70.31
+    ],
+    "text_32k_median": 53.98,
+    "vis_2048_decode_tps": [
+     100.46,
+     89.24,
+     89.98
+    ],
+    "vis_2048_median": 89.98,
+    "peak_mib": 20463
+   },
+   "q4q4": {
+    "text_32k_decode_tps": [
+     73.52,
+     71.09,
+     51.95,
+     56.28
+    ],
+    "text_32k_median": 63.69,
+    "vis_2048_decode_tps": [
+     94.95,
+     93.51,
+     84.45
+    ],
+    "vis_2048_median": 93.51,
+    "peak_mib": 19951
+   },
+   "finding": "q4_0/q4_0 在三项上全面优于 q8_0/q4_0：28K Decode 中位 53.98 → 63.69（+18%）、2048px 视觉 Decode 89.98 → 93.51（+3.9%）、峰值 20,463 → 19,951（-512 MiB）。原因是 q8_0-q4_0 在本构建没有 FA 向量 kernel（启动日志警告转 f16），而 q4_0-q4_0 有。**注意 28K Decode 的组内离散度很大（49~73 t/s），中位数差异仍在噪声边缘**；真正稳定的是显存差（512 MiB，与几何预测一致）。"
+  }
+ },
+ "measurement_protocol": {
+  "tool": "llama-server + 流式 HTTP 客户端（mmbench.py）",
+  "tool_version": "llama.cpp 0.7.0-dev, commit 547208d（CUDA 12.8, sm_89）",
+  "statistic": "每场景重复 3~6 次取中位数；并发场景每次 2 路同时发起",
+  "measurement_point": "端到端 SSE：TTFT = 首 token（含 reasoning_content）到达；Decode = 首 token 到末 token 的斜率",
+  "backend": "gpu",
+  "backend_label": "NVIDIA 独显 (CUDA)",
+  "accel_flags": [
+   "-ngl 99",
+   "-ngld 99",
+   "-fa on"
+  ],
+  "threads": 96,
+  "flags": [
+   {
+    "flag": "--mmproj",
+    "meaning": "挂载视觉投影；-mmproj-offload 默认开启，ViT 跑在 GPU"
+   },
+   {
+    "flag": "--image-max-tokens",
+    "meaning": "动态分辨率模型每张图的 token 上限；决定文本侧 prefill 量"
+   },
+   {
+    "flag": "--mtmd-batch-max-tokens",
+    "meaning": "视觉编码的 batch 上限；影响视觉阶段峰值显存"
+   },
+   {
+    "flag": "--spec-draft-n-max",
+    "meaning": "每步草稿 token 数；与验证 batch、草稿 KV 共同决定显存"
+   },
+   {
+    "flag": "--spec-draft-type-k/-v",
+    "meaning": "草稿模型 KV 精度；默认 f16，独立于主模型 KV"
+   },
+   {
+    "flag": "-b/-ub",
+    "meaning": "逻辑/物理 batch；决定 prefill 阶段工作区峰值"
+   }
+  ],
+  "conventions": [
+   "TTFT 计数口径：reasoning_content 与 content 任一出现即算首 token（思考链也占用户等待时间）",
+   "每次重复都用不同 nonce 前缀，避免 llama-server 的 Prefix Cache 命中（否则第二次 TTFT 会假性变好）",
+   "并发场景两路请求的 prompt 不同，避免 LCP 相似度选槽把两路吸附到同一槽位",
+   "显存峰值取进程生命周期最大值，且场景必须覆盖最大图（2048px）与最长文本（28K），否则会低估峰值",
+   "llama-server 的 prompt_ms 包含视觉编码 + 文本 prefill；ViT 编码时间需从 -v 日志的 image decoded 行单列读取"
+  ]
+ },
+ "environment_verification": {
+  "collected": "2026-10-19",
+  "activities": [
+   {
+    "activity": "设备连接",
+    "status": "pass",
+    "evidence": "SSH 直连云端实例（connect.cqa1.seetacloud.com:21204），nvidia-smi 可见 RTX 4090 24,564 MiB"
+   },
+   {
+    "activity": "SDK / 驱动安装",
+    "status": "pass",
+    "evidence": "驱动 570.124.04；CUDA 12.8 已装，/usr/local/cuda/bin 需显式加入 PATH"
+   },
+   {
+    "activity": "Runtime 部署",
+    "status": "pass",
+    "evidence": "llama.cpp commit 547208d 已编译，llama-server / llama-quantize / llama-perplexity / llama-mtmd-debug 均可执行"
+   },
+   {
+    "activity": "模型加载验证",
+    "status": "pass",
+    "evidence": "主模型 15.32 GiB + mmproj-Q8 597 MiB + MTP draft 1.28 GiB 三件套加载成功；日志 'loaded multimodal model' 与 'n_slots = 2, n_ctx_slot = 32768' 均正常"
+   },
+   {
+    "activity": "视觉能力验证",
+    "status": "pass",
+    "evidence": "1×1 红色 PNG → 「红色」；512px 图形编号 → 「QX-7391」；1024px 发票 → 金额 5607.92 / AUTH CODE ZK-8842；2048px 场景图 → TARGET 77"
+   },
+   {
+    "activity": "Demo 运行验证",
+    "status": "pass",
+    "evidence": "8 项视觉题 8/8；7 项难题 6/7（唯一失败项在所有配置下均失败，见 §5.5）"
+   },
+   {
+    "activity": "交付物可执行性验证",
+    "status": "pass",
+    "evidence": "按 start_optimized.sh 的同一组参数启动后，单流 92.65 t/s、峰值 19,917~20,452 MiB（三次运行），与报告声明值一致"
+   }
+  ],
+  "model_load": {
+   "wall_seconds": 9.4,
+   "peak_vram_mib": 19595,
+   "tensor_count": 866,
+   "tensors_ignored": 15,
+   "command": "llama-server -m $MODEL --mmproj $MMPROJ_Q8 -md $DRAFT --spec-type draft-mtp -ngld 99 -ngl 99 --parallel 2 --ctx-size 65536 -ctk q4_0 -ctv q4_0 --image-max-tokens 1024 --mtmd-batch-max-tokens 256 -b 1024 -ub 512 --flash-attn on"
+  },
+  "demo_run": {
+   "prompt": "这幅图片的背景纯色是红色、蓝色还是绿色？只回答颜色。",
+   "output": "红色（reasoning 内容与 content 均正确；1024px 发票题输出 5607.92 / ZK-8842，全部与图面一致）",
+   "prompt_tps": 1452.7,
+   "gen_tps": 48.26,
+   "command": "python3 mmbench.py --config case_BASE_RESCORE.json（quality 场景）"
+  },
+  "warnings_observed": [
+   "load_hparams: Qwen-VL models require at minimum 1024 image tokens to function correctly on grounding tasks（llama.cpp 内置提示；本次实测 768 与 1024 同为 6/7，512 降到 5/7）",
+   "q8_0-q4_0 无 FA 向量 kernel（仅影响 q8q4 配置；最终方案改用 q4_0/q4_0，stock 构建无此警告）"
+  ],
+  "verdict": {
+   "status": "pass",
+   "note": "环境验证通过：多模态链路（ViT → projector → 文本侧）全通，视觉输出正确；最终配置在 stock 构建上无 kernel 覆盖缺口"
+  }
+ },
+ "quality": {
+  "ppl": {
+   "dataset": "WikiText-2 raw test",
+   "method": "llama-perplexity",
+   "ctx": 512,
+   "chunks": 40,
+   "params": {
+    "ctx": 512,
+    "chunks": 40
+   },
+   "rows": [
+    {
+     "quant": "Q4_K_M (q4_0/q4_0 KV)",
+     "ppl": 5.8229,
+     "role": "deployed"
+    },
+    {
+     "quant": "Q4_K_M (f16 KV)",
+     "ppl": 5.8216
+    },
+    {
+     "quant": "Q6_K (f16 KV)",
+     "ppl": 5.8059,
+     "role": "reference"
+    }
+   ],
+   "command": "llama-perplexity -m $MODEL -f wikitext2_test.txt -ngl 99 -fa on -c 512 -b 512 --chunks 40 -ctk q4_0 -ctv q4_0",
+   "reference_note": "参照档是 Q6_K 而不是 F16：F16 权重约 51 GiB，24 GB 单卡装不下。Q4_K_M 相对 Q6_K 劣化 +0.29%，相对 F16 的劣化仍未直接测出。",
+   "caveat": "40 chunks × 512 ctx 只覆盖约 2 万 token，是抽样口径；两组测量的 stddev 均为 0.137，远大于 0.02% 的 KV 差额 —— 该差额在当前采样规模下**不显著**，只能说明「KV 从 q8q4 降到 q4q4 没有可测量的大幅劣化」。"
+  },
+  "output_consistency": {
+   "status": "partial",
+   "evidence": "8 项简单视觉题在 5 种配置（KV f16/q8q8/q8q4/q4q4 × mmproj F16/Q8）下全部 8/8，答案文本一致；未做同输入多次采样的格式合法率统计"
+  },
+  "needle": {
+   "design": "两类：① 24K 文本埋 5 条异质事实（一次答全）；② 24K 文本埋 20 条**同类**仓库码（逐条精确检索 3 条）。均只换 KV 精度。",
+   "finding": "四档 KV 精度（f16 / q8_0-q8_0 / q8_0-q4_0 / q4_0-q4_0）全部通过：5 针 5/5、20 码检索 3/3。**未检出 q4_0 对精确检索的损伤**。",
+   "configs": [
+    {
+     "kv": "q4_0 / q4_0（选定）",
+     "hit_32k": "3/3",
+     "hit_60k": "3/3",
+     "result": "全中"
+    },
+    {
+     "kv": "q8_0 / q4_0（基线）",
+     "hit_32k": "3/3",
+     "hit_60k": "3/3",
+     "result": "全中"
+    },
+    {
+     "kv": "q8_0 / q8_0",
+     "hit_32k": "3/3",
+     "hit_60k": "3/3",
+     "result": "全中"
+    },
+    {
+     "kv": "f16 / f16",
+     "hit_32k": "3/3",
+     "hit_60k": "3/3",
+     "result": "全中"
+    }
+   ],
+   "caveat": "样本量小（每档 3 题、各 1 次采样），针的内容也高度独特 —— 只能说明「没有可测量的大幅退化」，不能证明 q4_0 零风险。"
+  },
+  "vision": {
+   "simple": 8,
+   "simple_total": 8,
+   "baseline_simple": 8,
+   "hard": 6,
+   "hard_total": 7,
+   "baseline_hard": 5,
+   "note": "简单题在基线、最终配置、5 种 KV/mmproj 组合下全部 8/8；难题基线 5/7、最终 6/7（多答对 F7 网格形状）。唯一失败项「图+20K 文本混合」在所有配置下均失败，属模型能力边界。"
+  }
+ }
+}

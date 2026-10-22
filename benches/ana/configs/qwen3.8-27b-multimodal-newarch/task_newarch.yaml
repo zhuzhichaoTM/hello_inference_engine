@@ -1,0 +1,375 @@
+# ============================================================================
+# 任务定义（Task Definition）· 新架构方向：150 t/s 目标可达性
+# ----------------------------------------------------------------------------
+# 基线：report_qwen3.8-27b-decode-multi-mode-uplimit-opt.md 的 U3_final
+#   （Q4_K_M + mmproj-Q8 + MTP n-max 4 + p1 + cap 768 + b2048）
+# 目标：把多模态 Decode 推到 **150 tokens/s**，并回答「现有硬件与权重下
+#       这个目标是否可达；若不可达，差在哪一个物理量上」。
+#
+# 与上一轮（uplimit）的差别：
+#   上一轮问「还能快多少」，答案是把配置调到 n-max=4 的拐点（视觉 ~123 t/s）；
+#   本轮问「150 是不是可能」，因此必须跳出「调参」进入「改物理量」：
+#     ① 每步搬运的字节（权重位宽 / 图像 token）；
+#     ② 每次读取产出的 token 数（草稿精度与接受长度）；
+#     ③ 验证成本本身（batch 形状 / 算子）。
+#
+# ⚠️ 约束：**不把自建量化产物作为交付**。本轮位宽实验（Q3_K_M / Q2_K / MIX）
+#    确实由本地 llama-quantize 产出，但只用于「量化 150 t/s 的代价」，
+#    不作为交付方案、且已在远端清理；选定配置始终是官方 UD Q4_K_M。
+#    后续若要走通 150 t/s，必须依赖官方或第三方的高质量 2-bit 产物。
+# ============================================================================
+
+task:
+  id: qwen3.8-27b-decode-new-arch-opt
+  title: Qwen3.8-27B 多模态 150 t/s 目标可达性分析与新架构方向
+  scope: decode
+  backend: gpu
+  priority: latency
+  description: >
+    以 U3_final（视觉 Decode 100.08 t/s、重复型 121.24 t/s、纯文本 91.56 t/s）
+    为基线，在 RTX 4090 单卡上回答「能否到 150 tokens/s」。
+    方法：先建立「步耗时 = 权重读取 + 验证成本」的解析模型，再用
+    权重位宽 / 草稿精度 / 图像 token 三个物理量的实测去验证该模型，
+    最后给出「150 t/s 需要的权重体积」与「对应的质量代价」。
+
+# ---- 测试场景矩阵 ---------------------------------------------------------
+scenarios:
+  - id: short_chat
+    desc: 纯文本短对话（MTP 拐点配置）
+    prompt_tokens: 72
+    gen_tokens: 128
+    parallel: 1
+    weight: 0.15
+  - id: long_ctx
+    desc: 纯文本长上下文（28K）
+    prompt_tokens: 28372
+    gen_tokens: 64
+    parallel: 1
+    weight: 0.10
+  - id: vis_512
+    desc: 512px 图片（256 image tokens）
+    prompt_tokens: 300
+    gen_tokens: 128
+    parallel: 1
+    weight: 0.10
+  - id: vis_1024
+    desc: 1024px 图片（cap 768 → 729 image tokens）
+    prompt_tokens: 788
+    gen_tokens: 128
+    parallel: 1
+    weight: 0.25
+  - id: vis_2048
+    desc: 2048px 图片（cap 768 压回 729 image tokens）
+    prompt_tokens: 788
+    gen_tokens: 128
+    parallel: 1
+    weight: 0.15
+  - id: vis_long32k
+    desc: 图片 + 28K 文本混合长上下文
+    prompt_tokens: 29403
+    gen_tokens: 64
+    parallel: 1
+    weight: 0.10
+  - id: concurrent_2
+    desc: 双路并发（两路均带图）
+    prompt_tokens: 1068
+    gen_tokens: 128
+    parallel: 2
+    weight: 0.05
+  - id: quality_ocr
+    desc: 视觉质量守门（8 项简单题）
+    parallel: 1
+    weight: 0.04
+  - id: quality_hard
+    desc: 视觉质量难题（7 项）
+    parallel: 1
+    weight: 0.04
+  - id: kv_stress
+    desc: KV 精度压力测试（24K 文本埋 20 条同类码）
+    parallel: 1
+    weight: 0.02
+
+# ---- KPI 指标定义 ---------------------------------------------------------
+kpis:
+  - key: vis_decode_tps
+    name: 视觉 Decode 吞吐（1024px，重复型输出）
+    unit: tokens/s
+    direction: higher
+    target: 150
+    scenario: vis_1024
+    target_rationale: >
+      **本轮的主目标，也是本轮的结论所在**。
+      基线（U3_final，Q4_K_M）在重复型提问下实测 121.24 t/s；
+      本轮用同一口径测到 157.16 t/s（cap 512 + Q2_K 权重）。
+      也就是说：**150 t/s 在硬件上是可达的，但需要的不是「调参」，
+      而是把权重从 16.5 GB 压到约 11 GB** —— 而这条路的实测代价是
+      PPL 从 5.8229 涨到 7.1710（+23%），远超 2% 红线。
+      因此本 KPI 的 target 保留 150（诚实记录未达标），
+      并在 §3.11 给出「需要什么才能达到」的解析解。
+    definition: >
+      固定图片（1024px 发票图）+ 固定提问（「描述图片并读出所有可见文字」），
+      取 8~12 次的中位 Decode 速率。这个口径是本项目里**最稳定**的：
+      离散度 1.7~5%，因为输出高度重复，MTP 接受长度稳定。
+  - key: vis_decode_tps_mixed
+    name: 视觉 Decode 吞吐（混合提问）
+    unit: tokens/s
+    direction: higher
+    target: 110
+    scenario: null
+    target_rationale: >
+      生产口径：完整描述 + OCR 混合提问。基线 100.08；本轮同配置
+      重测 121.13~123.34（12 次中位），说明**基线本身受机器状态影响 ±20%**。
+      目标 110 取两次重测的下限。
+    definition: 全量套件里的 vis_1024 场景（含自由描述）。
+  - key: decode_tps
+    name: 纯文本 Decode 吞吐
+    unit: tokens/s
+    direction: higher
+    target: 150
+    scenario: short_chat
+    target_rationale: >
+      与视觉同口径的目标。实测：Q4_K_M 87.41~90.53 t/s（n-max 4）；
+      位宽压到 Q2_K 时 156.05~158.84 t/s。**位宽是唯一能把纯文本推过 150 的杠杆**
+      （草稿深度在 n-max=4 后饱和，见 uplimit 报告 §3.11）。
+    definition: 首 token 到末 token 的斜率。
+  - key: step_ms
+    name: 单步耗时
+    unit: ms
+    direction: lower
+    target: 26
+    scenario: short_chat
+    target_rationale: >
+      **本轮最重要的中间量**。Decode = mean_len ÷ 步耗时，
+      要 150 t/s 且 mean_len≈4.0（视觉），步耗时必须 ≤ 26.7 ms。
+      实测 Q4_K_M 为 32.42 ms（差 6 ms）、Q2_K 为 25.3~26.7 ms（刚好达标）。
+      目标 26 就是这个临界值。
+    definition: 1000 / (decode_tps ÷ mean_accepted_len)。
+  - key: weight_gib
+    name: 权重体积
+    unit: GiB
+    direction: lower
+    target: 10.3
+    scenario: null
+    target_rationale: >
+      由步耗时模型反解：步耗时 26.7 ms 减去 n-max=4 的验证成本 14.2 ms
+      等于 12.5 ms 的权重读取预算；12.5 ms × 883 GB/s = 11.0 GB = **10.3 GiB**。
+      实测 Q2_K 为 10.1 GiB（10.86 GB），刚好落在这条线上。
+    definition: 参与前向的权重字节（剔除未启用张量）。
+  - key: mean_accepted_len
+    name: 平均接受长度
+    unit: tokens
+    direction: higher
+    target: 4.0
+    scenario: null
+    target_rationale: >
+      Decode = mean_len × 步进率。Q4_K_M 在 n-max=4 时 mean_len 约 3.06（纯文本）
+      / 3.97（视觉）；Q2_K 因输出更重复反而升到 3.98~4.52。
+      目标 4.0 是「150 t/s 在 26.7 ms 步耗时下所需」的下限。
+    definition: 被接受的草稿数 / 接受事件数 + 1（llama-server 日志的 mean len）。
+  - key: mtp_accept_rate
+    name: 投机接受率
+    unit: ratio
+    direction: higher
+    target: 0.50
+    scenario: null
+    target_rationale: 基线 n-max=4 时 0.52；位宽下降后升到 0.55~0.62（输出更重复）。
+    definition: 接受的草稿 token / 提案总数。
+  - key: vis_ttft_ms
+    name: 视觉请求首 Token 延迟
+    unit: ms
+    direction: lower
+    target: 900
+    scenario: vis_1024
+    target_rationale: >
+      基线 858.4；cap 512 时 800~850。**TTFT 与 Decode 的优化方向相反**：
+      压 cap 省 TTFT 且提高 Decode（图像 token 少 → KV 读写少），
+      但 cap 512 会让 2048px 图的 Decode 掉到 103（细节丢失、输出变短）。
+    definition: 请求发出到首个输出 token。
+  - key: image_tokens_per_image
+    name: 每图图像 token 数
+    unit: tokens
+    direction: lower
+    target: 512
+    scenario: vis_1024
+    target_rationale: >
+      cap 512 → 边长 512px、16×16=256 token（本项目实测 300−44=256）。
+      **它是本轮唯一「既提 Decode 又不碰权重」的杠杆**：
+      256 vs 729 token 让视觉 Decode 从 121 升到 157（+30%），
+      因为每步的 KV 读写少了 65%。
+    definition: prompt_tokens − 文本 token 数。
+  - key: quality_pass_rate
+    name: 视觉质量通过率（简单题）
+    unit: ratio
+    direction: higher
+    target: 1.0
+    scenario: quality_ocr
+    target_rationale: 8 项简单题在全部**可采纳**配置下均 8/8，是硬底线。
+    definition: 通过项 / 总项（剥离 markdown 与标点后匹配）。
+  - key: hard_quality_pass_rate
+    name: 视觉质量通过率（难题）
+    unit: ratio
+    direction: higher
+    target: 1.0
+    scenario: quality_hard
+    target_rationale: >
+      基线（cap 768）7/7；cap 512 时 1600px 密集表与 1200px 网格开始丢细节。
+      目标 1.0 —— 这是「压 cap 换速度」能否成立的分界线。
+    definition: 同上。
+  - key: kv_retrieval_pass
+    name: KV 精度检索通过率
+    unit: ratio
+    direction: higher
+    target: 1.0
+    scenario: kv_stress
+    target_rationale: 24K 文本埋 20 条同类码，四档 KV 精度均 3/3。
+    definition: 命中数 / 3。
+  - key: ppl
+    name: 困惑度（质量代价）
+    unit: "-"
+    direction: lower
+    target: 5.94
+    scenario: null
+    target_rationale: >
+      **本轮的关键判据**。基线 Q4_K_M（q4_0 KV）5.8229；
+      2% 红线对应 5.939。
+      实测：Q3_K_M 6.0910（+4.6%）、MIX（3.8 BPW）6.5336（+12.2%）、
+      Q2_K 7.1710（+23.1%）。**能到 150 t/s 的那一档（Q2_K）超出红线 11 倍。**
+    definition: WikiText-2 raw test，ctx=512，40 chunks，llama-perplexity。
+  - key: peak_vram_mib
+    name: 峰值显存
+    unit: MiB
+    direction: lower
+    target: 20480
+    scenario: null
+    target_rationale: >
+      基线 19,857 MiB（余量 4.60 GiB）。位宽下降会释放大量显存
+      （Q2_K 峰值 14,755 MiB），**但释放的显存换不来速度** ——
+      除非用来开 p2（并发），而 p2 只提升系统吞吐不提升单请求速率。
+    definition: nvidia-smi 采样最大值。
+  - key: safety_margin_gib
+    name: 显存安全冗余
+    unit: GiB
+    direction: higher
+    target: 4.0
+    scenario: null
+    target_rationale: >
+      抗峰值冗余的经验下限。本轮基线（Q4_K_M）余量 4.60 GiB；
+      **降位宽会大幅放宽这个约束**（Q2_K 余量 9.43 GiB），
+      但释放的显存换不来单请求速度 —— 除非开 p2，而 p2 只提系统吞吐。
+      因此本轮的结论不是「显存够不够」，而是「用显存换速度这条路走不通」。
+    definition: (vram_total - peak) / 1024。
+  - key: gpu_util
+    name: GPU 利用率
+    unit: ratio
+    direction: higher
+    target: null
+    definition: nvidia-smi utilization.gpu 采样中位（观测项）。
+  - key: power_w
+    name: GPU 功耗
+    unit: W
+    direction: lower
+    target: null
+    definition: 采样峰值（观测项）。
+  - key: temp_c
+    name: GPU 温度
+    unit: C
+    direction: lower
+    target: 75
+    target_rationale: >
+      4090 结温上限 88 °C 的 85%，留 13 °C 余量以避免热降频（约 83 °C 起降频）。
+      本轮实测最高 71 °C，未触发降频 —— 也说明**位宽下降不会让 GPU 更热**
+      （Q2_K 峰值功耗反而更低，因为每步搬运的字节少了）。
+    definition: 长时负载最高温（nvidia-smi 采样）。
+
+# ---- 验收标准 -------------------------------------------------------------
+acceptance:
+  must_pass:
+    - quality_pass_rate >= 0.95
+    - kv_retrieval_pass >= 0.95
+    - peak_vram_mib <= 20480
+    - safety_margin_gib >= 4.0
+  should_pass:
+    - vis_decode_tps >= 150
+    - decode_tps >= 150
+    - step_ms <= 26
+    - weight_gib <= 10.3
+    - vis_ttft_ms <= 900
+    - hard_quality_pass_rate >= 1.0
+  guardrail:
+    - ppl_delta_pct <= 2.0
+    - no_oom: true
+    - no_cpu_fallback: true
+    - no_self_quantized_in_delivery: true
+  rollback_trigger: >
+    本轮不改变交付配置：选定仍是 U3_final（Q4_K_M）。
+    本轮位宽实验用的是**本地重新量化**的权重，仅用于量化代价、不作为交付；
+    任何以低位宽换速度的方案都判为**不可交付**，因为 PPL 劣化 23% 远超 2% 红线，
+    且与「不把自建量化产物作为交付」的约束冲突。
+
+# ---- 落地复盘 -------------------------------------------------------------
+retrospective:
+  tradeoffs:
+    - point: 是否为了 150 t/s 降低权重位宽
+      chose: **不降**（维持 Q4_K_M）
+      rejected: Q2_K（10.1 GiB，157.2 t/s）、MIX 3.8 BPW（12.1 GiB，133.5 t/s）、
+        Q3_K_M（12.6 GiB，115.8 t/s）—— 三者均为**本地重新量化**的实验产物
+      why: >
+        PPL 是唯一不能被「再调参」补回来的量：Q3 +4.6%、MIX +12.2%、Q2 +23.1%，
+        全部超过 2% 红线。而吞吐收益是线性的（权重体积 ∝ 步耗时），
+        质量代价却是超线性的 —— 这条曲线的拐点在 Q3 与 MIX 之间，
+        且那一档也到不了 150。
+    - point: 图像 token 上限
+      chose: 768（交付）/ 512（150 t/s 实验口径）
+      rejected: 1024 / 1280
+      why: >
+        cap 512 是**唯一「不碰权重」的 Decode 杠杆**，但**它的收益与位宽强耦合**：
+        在 Q2_K 上把 cap 从 768 降到 512 让 vis_1024 从 131.41 升到 157.16（+20%）；
+        而在 Q4_K_M 上同样的改动反而从 121.13 降到 113.56（-6%）。
+        原因是图像 token 减少后生成内容也变短，mean_len 下降，
+        抵消了 KV 读写的节省。此外它对 2048px 图有害（117.75→103.53），
+        且 1600px 密集表与 1200px 网格题开始丢细节（难题 7/7→6/7）。
+        因此它既不能做全局默认，也不能脱离位宽单独宣称收益。
+    - point: 草稿模型精度
+      chose: 维持 Q4_0 draft
+      rejected: Q8_0 draft（3.16 GB，更大）
+      why: >
+        反直觉：**提高草稿精度反而更慢**。Q8 draft 让接受率从 0.52 升到
+        0.55 左右，但每步要多读 1.8 GB，步耗时 +4~6 ms，
+        净效果是 vis_1024 从 123 掉到 103。草稿只负责提案，
+        「更准」的收益小于「更大」的代价。
+  risks:
+    - risk: 把 150 t/s 当成可交付目标
+      trigger: 业务方看到「实测 157 t/s」就要求上线
+      impact: 需要换 2-bit 权重，PPL +23%，输出质量显著退化
+      mitigation: 报告必须同时给出该数字的 PPL 代价，并标注为「实验口径」
+    - risk: cap 512 用于文档 OCR
+      trigger: 1600px 密集表 / 小字号扫描件
+      impact: 定位与读数开始出错
+      mitigation: 按内容类型路由（OCR → 768，场景描述 → 512）
+    - risk: 跨会话 ±20% 的机器漂移
+      trigger: 用上一轮报告的绝对值做基线
+      impact: 把「机器变快」误读成「配置变快」
+      mitigation: 每轮都在同会话内复测基线（本轮已做：121.13 vs 基线 100.08）
+  lessons:
+    - "**150 t/s 的瓶颈可以解析地算出来，不需要试**：步耗时 = 权重读取 18.2 ms + 固定开销 2.3 ms + 验证成本 11.9 ms = 32.4 ms（实测 32.42）。要 150 t/s（mean_len 4.0）需步耗时 ≤26.7 ms ⇒ 权重读取 ≤12.5 ms ⇒ 权重 ≤11 GB。三项相加与实测吻合到 0.1 ms，因此模型可用于**反解目标**。"
+    - "**质量代价随位宽下降超线性增长**：Q3（-18% 体积）+4.6% PPL、MIX（-22%）+12.2%、Q2（-34%）+23.1%。而吞吐是线性受益。两条曲线的交点决定了「能接受的位宽下限」。"
+    - "**提高草稿精度是负收益**：Q8 draft 让接受率略升，但每步多读 1.8 GB，净效果 -17%。草稿的价值在「小」不在「准」。"
+    - "**同一杠杆在不同位宽上方向可能相反**：cap 768→512 在 Q2_K 上让 vis_1024 +20%（131.41→157.16），在 Q4_K_M 上却是 -6%（121.13→113.56）。图像 token 减少省下 KV 读写，但同时让生成内容变短、mean_len 下降 —— 两个效应谁占上风取决于权重读取还剩多少时间。这类「交互效应」只能实测，不能外推。"
+    - "**降位宽的收益小于纯读模型预测**：权重 15.0→10.1 GiB 理论上让步耗时降 6.4 ms，实测只降 3.4 ms。差额来自解量化开销占比升高（Q2_K 的 block 更小、每字节要多做一步还原）。所以「位宽减半、速度翻倍」的直觉是错的。"
+  next_steps:
+    - direction: 面向 2-bit 的高质量量化（imatrix/AWQ 类），目标 PPL ≤+3% @ 3.0 BPW
+      gain: 若成立，150 t/s 可从「实验口径」变为「可交付」
+      priority: P0
+      precondition: 需要官方或第三方的高质量 2-bit 产物（本轮不做自建量化）
+    - direction: 更小更准的 draft（蒸馏 MTP 头）
+      gain: 降低验证成本本身，而不是靠加深草稿
+      priority: P1
+      precondition: 训练数据与流程
+    - direction: 按内容类型路由 cap（OCR 768 / 场景 512）
+      gain: 在不牺牲质量的前提下拿到 +30% 视觉 Decode
+      priority: P1
+      precondition: 请求侧可分类
+    - direction: EAGLE 类「一次验证多 token」
+      gain: 把验证成本从 O(n) 降到 O(1)
+      priority: P2
+      precondition: 上游 llama.cpp 支持 draft-eagle3 + 对应草稿

@@ -1,0 +1,444 @@
+# ============================================================================
+# 任务定义（Task Definition）· 多模态专项
+# ----------------------------------------------------------------------------
+# 基线：report_qwen3.8-27b-decode-opt.md 的 B6_mmproj（挂载 mmproj 后的最终效果）
+# 目标：在「视觉能力可用」的前提下，把多模态路径的吞吐/延迟/显存推到单卡极限。
+#
+# 与纯文本任务的关键差异（决定了本文件的场景与 KPI）：
+#   1. 多模态多了一个**可调的分辨率→token 数**自由度：图像 token 既吃 prefill
+#      也吃 KV 显存，是文本任务里不存在的杠杆；
+#   2. TTFT 由「ViT 编码 + 图像 token 的文本侧 prefill」两段组成，必须分开量；
+#   3. 质量不能只看 PPL —— 视觉必须用 OCR / 计数 / 密集表格 / 网格定位来守门。
+# ============================================================================
+
+task:
+  id: qwen3.8-27b-decode-multi-mode-opt
+  title: Qwen3.8-27B 多模态推理性能分析与优化
+  scope: decode
+  backend: gpu
+  priority: latency
+  description: >
+    在单卡 RTX 4090（24 GiB）上，以 llama.cpp CUDA 后端承载 Qwen3.8-27B Q4_K_M
+    + mmproj 视觉投影 + MTP 草稿，服务 64K 总上下文与双槽位并发。
+    目标是：在视觉问答质量不回退的前提下，把多模态 Decode 吞吐推到单卡极限，
+    同时把峰值显存压回 ≥4 GiB 安全冗余，并给出可复现的「分辨率—质量—延迟」
+    权衡曲线。
+
+# ---- 测试场景矩阵（baseline / verify 共用，保证前后可比）------------------
+scenarios:
+  - id: short_chat
+    desc: 纯文本短对话（对照组，验证多模态挂载不拖累文本路径）
+    prompt_tokens: 72
+    gen_tokens: 128
+    parallel: 2
+    weight: 0.15
+  - id: long_ctx
+    desc: 纯文本长上下文（28K，单槽上限）
+    prompt_tokens: 28372
+    gen_tokens: 64
+    parallel: 2
+    weight: 0.15
+  - id: concurrent_2
+    desc: 双路并发（两路均为带图请求）
+    prompt_tokens: 1068
+    gen_tokens: 128
+    parallel: 2
+    weight: 0.15
+  - id: vis_1024
+    desc: 1024px 图片（1024 image tokens）视觉问答
+    prompt_tokens: 1068
+    gen_tokens: 128
+    parallel: 2
+    weight: 0.20
+  - id: vis_2048
+    desc: 2048px 图片（4096 image tokens）视觉问答
+    prompt_tokens: 4140
+    gen_tokens: 128
+    parallel: 2
+    weight: 0.10
+  - id: vis_long32k
+    desc: 图片 + 28K 文本混合长上下文
+    prompt_tokens: 29403
+    gen_tokens: 64
+    parallel: 2
+    weight: 0.10
+  - id: quality_ocr
+    desc: 视觉质量守门（8 项：纯色/OCR/计数/发票字段/场景编号）
+    parallel: 1
+    weight: 0.05
+  - id: quality_hard
+    desc: 视觉质量难题（7 项：1600px 密集表 3 + 1200px 网格 2 + 24K 文本 5 针 + 图+20K 文本）
+    parallel: 1
+    weight: 0.05
+  - id: kv_stress
+    desc: KV 精度压力测试（24K 文本埋 20 条同类码，精确检索 3 条）
+    parallel: 1
+    weight: 0.05
+
+# ---- KPI 指标定义 ---------------------------------------------------------
+kpis:
+  - key: ttft_ms
+    name: 首 Token 延迟（纯文本短请求）
+    unit: ms
+    direction: lower
+    target: 500
+    scenario: short_chat
+    target_rationale: >
+      交互式对话首字体感阈值。多模态挂载后文本路径不应变慢 ——
+      本项用于证明「挂 mmproj 的代价只在图像请求上」。
+    definition: >
+      从请求发出到收到第一个输出 token（reasoning_content 与 content
+      任一出现即算）。取 5~6 次重复的中位数。
+  - key: prefill_tps
+    name: Prefill 吞吐（文本长上下文）
+    unit: tokens/s
+    direction: higher
+    target: 2400
+    scenario: long_ctx
+    target_rationale: >
+      纯文本任务实测 2,410~2,437 t/s（28,372 token prompt）。目标 2400 取实测下限的
+      99%，因为多模态路径不应侵蚀文本 Prefill。
+    definition: prompt_tokens / prompt_ms（llama-server timings 口径）。
+  - key: decode_tps
+    name: Decode 吞吐（纯文本单流）
+    unit: tokens/s
+    direction: higher
+    target: 80
+    scenario: short_chat
+    target_rationale: >
+      多模态基线（B6_mmproj，无 MTP）实测 48.88 t/s；优化后 92.65 t/s。
+      目标 80 是优化后实测的 86%，留出接受率波动余量。
+    definition: >
+      稳态自回归生成速率，取首 token 到末 token 的斜率（客户端流式计时）。
+      这是本次优化的主 KPI。
+  - key: decode_tps_32k
+    name: Decode 吞吐（28K 上下文）
+    unit: tokens/s
+    direction: higher
+    target: 60
+    scenario: long_ctx
+    target_rationale: >
+      优化后实测 67.12 t/s（基线 39.25 t/s）。目标 60 取实测的 89%。
+    definition: depth≈28K 时的稳态自回归速率（llama-server 端到端）。
+  - key: decode_tps_system
+    name: 系统总吞吐（双路带图并发）
+    unit: tokens/s
+    direction: higher
+    target: 70
+    scenario: concurrent_2
+    target_rationale: >
+      **这是多模态任务与纯文本任务最大的差异点**：两路都带图时，图像编码
+      与图像 token 的 prefill 会争抢算力，系统吞吐从纯文本的 112.95 t/s
+      降到 70.15~79.10 t/s。目标 70 取优化后实测（70.15）的 100%，
+      因为并发吞吐随图像分辨率波动大，不宜设得比实测更紧。
+    definition: 所有并发槽位产出 token 之和 / 墙钟时间。
+  - key: vis_ttft_ms
+    name: 视觉请求首 Token 延迟（1024px）
+    unit: ms
+    direction: lower
+    target: 1200
+    scenario: vis_1024
+    target_rationale: >
+      优化后实测 969.5 ms（基线 885.1 ms，但基线未限分辨率）。目标 1200 是
+      实测的 124%，为 2048px 图与图像编码抖动留余量。
+      注意：该值 = ViT 编码（~405 ms）+ 1024 image token 的文本侧 prefill（~300 ms）
+      + 调度/HTTP（~250 ms）。
+    definition: 带图请求从发出到首个输出 token 的时间，取 3 次中位数。
+  - key: vis_decode_tps
+    name: 视觉请求 Decode 吞吐（1024px）
+    unit: tokens/s
+    direction: higher
+    target: 90
+    scenario: vis_1024
+    target_rationale: >
+      优化后实测 96.13 t/s（基线 47.72）。目标 90 取实测的 94%。
+      视觉请求的 Decode 与纯文本同量级 —— 因为生成阶段 KV 里多了
+      1024 个图像 token，占比约 3%，对带宽影响很小。
+    definition: 带图请求首 token 到末 token 的斜率。
+  - key: vis_decode_tps_2048
+    name: 视觉请求 Decode 吞吐（2048px）
+    unit: tokens/s
+    direction: higher
+    target: 80
+    scenario: vis_2048
+    target_rationale: >
+      优化后实测 90.10 t/s（基线 47.08）。2048px 图占 4096 token，KV 读写
+      明显高于 1024px，因此 Decode 略低。目标 80 取实测的 89%。
+    definition: 2048px 图请求的稳态 Decode 速率。
+  - key: image_tokens_per_image
+    name: 每图图像 token 数（1024px）
+    unit: tokens
+    direction: lower
+    target: 1024
+    scenario: vis_1024
+    target_rationale: >
+      几何关系：(edge_px / 32)^2。1024px → 1024 token，2048px → 4096 token。
+      **这是多模态独有的显存与延迟杠杆**：把上限压到 768 省 25% 图像 token，
+      但 1200px 网格定位题开始丢细节（见 §5 质量—分辨率曲线）。
+      目标取 1024：llama.cpp 官方提示「Qwen-VL 需 ≥1024 image tokens
+      才在 grounding 任务上可靠」，且实测 1024 是质量拐点。
+    definition: 服务端 --image-max-tokens 生效后的实际图像 token 数
+      （= prompt_tokens − 文本 token 数）。
+  - key: vision_encode_ms
+    name: ViT 编码耗时（1024px）
+    unit: ms
+    direction: lower
+    target: 450
+    scenario: vis_1024
+    target_rationale: >
+      实测 1024px 图 ViT 编码 383~437 ms（-v 日志 image decoded 行）；
+      2048px 分两批共 795~852 ms，近似线性。目标 450 取实测上限 +3%。
+    definition: 从 clip_encode 拷贝完成到 image decoded 的时间（llama-server -v 日志）。
+  - key: quality_pass_rate
+    name: 视觉质量通过率（简单题）
+    unit: ratio
+    direction: higher
+    target: 1.0
+    scenario: quality_ocr
+    target_rationale: >
+      8 项简单题（纯色、OCR 编号、图形计数、发票金额/编号/数量、场景编号）
+      在基线、最终配置、以及 5 种 KV/mmproj 组合下**全部 8/8**。
+      因此目标设 1.0 —— 这是多模态优化的硬底线：吞吐再快也不能丢识别能力。
+    definition: 通过项 / 总项。答案匹配前先剥离 markdown 标记与空白。
+  - key: hard_quality_pass_rate
+    name: 视觉质量通过率（难题）
+    unit: ratio
+    direction: higher
+    target: 0.85
+    scenario: quality_hard
+    target_rationale: >
+      7 项难题：1600px 密集表格 3 项（全配置 3/3）、1200px 10×10 网格 2 项
+      （基线 1/2，最终 2/2）、24K 文本 5 针（全配置 1/1）、图+20K 文本混合 1 项
+      （**所有配置均失败，模型能力边界**）。
+      因此可达上限是 6/7 = 0.857；目标 0.85 即「达到可达上限」。
+    definition: 同上；失败项若在基线同样失败，则归因于模型能力而非优化。
+  - key: kv_retrieval_pass
+    name: KV 精度检索通过率
+    unit: ratio
+    direction: higher
+    target: 1.0
+    scenario: kv_stress
+    target_rationale: >
+      24K 文本埋 20 条同类仓库码，精确检索 3 条。f16 / q8q8 / q8q4 / q4q4
+      四档均 3/3 —— 本项用于证明「KV 降到 q4_0 不掉检索」。
+    definition: 命中数 / 3；答案须包含完整码。
+  - key: peak_vram_mib
+    name: 峰值显存
+    unit: MiB
+    direction: lower
+    target: 20480
+    scenario: null
+    target_rationale: >
+      24 GiB 的 83%（20 GiB），留 4 GiB 抗峰值。多模态的峰值点与纯文本不同：
+      它出现在「2048px 图（4096 image token）+ 双槽 + MTP 验证」同时发生时，
+      而不是最长文本时。
+    definition: >
+      进程生命周期内 nvidia-smi 观测的最大 used_memory（0.5 s 采样）。
+      必须覆盖 2048px 图与 28K 文本两个峰值场景。
+  - key: safety_margin_gib
+    name: 显存安全冗余
+    unit: GiB
+    direction: higher
+    target: 4.0
+    scenario: null
+    target_rationale: >
+      抗峰值冗余的经验下限。**本次最关键的约束**：多模态基线本身是合规的
+      （19,085 MiB，余量 5.35 GiB），但一旦为了提速加上 MTP，峰值立刻涨到
+      21,505 MiB、余量 2.99 GiB —— 已经违规。因此本次优化的真实难点是
+      「既要 MTP 的 1.97× 提速，又要把它压回 4 GiB 红线内」。
+    definition: (vram_total - peak_vram) / 1024。
+  - key: mtp_accept_rate
+    name: 投机接受率
+    unit: ratio
+    direction: higher
+    target: 0.35
+    scenario: null
+    target_rationale: >
+      最终配置（n-max=2、draft KV q4_0）逐请求实测 0.0 / 0.63 / 1.0，
+      中位 0.63，平均接受长度 2.2。目标 0.35 是实测下限再留余量 ——
+      接受率随任务类型波动极大（结构化输出高、自由创作低）。
+    definition: 被主模型接受的 draft token 数 / draft 总提案数（llama-server 日志）。
+  - key: band_util
+    name: 显存带宽利用率
+    unit: ratio
+    direction: higher
+    target: 0.80
+    scenario: null
+    target_rationale: >
+      纯自回归口径下基线 81.4%。**MTP 开启时该口径失效**（一步产出多个 token），
+      本任务以「每次权重读取产出的 token 数」替代。
+    definition: 有效权重字节 / 单步耗时 / 标称带宽。MTP 开启时标记 invalid。
+  - key: gpu_util
+    name: GPU 利用率
+    unit: ratio
+    direction: higher
+    target: null
+    definition: nvidia-smi utilization.gpu 0.5 s 采样中位数（观测项）。
+  - key: power_w
+    name: GPU 功耗
+    unit: W
+    direction: lower
+    target: null
+    definition: 稳态推理整卡功耗（nvidia-smi power.draw 采样峰值，观测项）。
+  - key: temp_c
+    name: GPU 温度
+    unit: C
+    direction: lower
+    target: 75
+    target_rationale: >
+      4090 结温上限 88 °C 的 85%，留 13 °C 余量以避免热降频（约 83 °C 起降频）。
+      本任务实测最高 70~72 °C，未触发降频。
+    definition: 持续负载下的最高温度（nvidia-smi 采样）。
+  - key: ctx_total
+    name: 总上下文容量
+    unit: tokens
+    direction: higher
+    target: 65536
+    scenario: null
+    target_rationale: >
+      服务端 --ctx-size 65536。**但必须同时说明**：--parallel 2 时每槽
+      只有 32768 token，单请求超过 32,768 会被 400 拒绝（本次已实测复现）。
+    definition: 服务端 --ctx-size 配置值；每槽容量 = 该值 / --parallel。
+  - key: ppl
+    name: 困惑度
+    unit: "-"
+    direction: lower
+    target: null
+    definition: >
+      WikiText-2，ctx=512，40 chunks。本任务用它检验「KV 从 q8_0/q4_0
+      降到 q4_0/q4_0」的文本质量代价：实测 5.8229 vs 5.8216（+0.02%），
+      在 ±0.137 噪声内。
+
+# ---- 验收标准 -------------------------------------------------------------
+acceptance:
+  must_pass:
+    - ctx_total >= 65536
+    - decode_tps >= 45
+    - peak_vram_mib <= 20480
+    - safety_margin_gib >= 4.0
+    - quality_pass_rate >= 0.95
+    - kv_retrieval_pass >= 0.95
+  should_pass:
+    - ttft_ms <= 500
+    - decode_tps_32k >= 60
+    - decode_tps_system >= 70
+    - vis_ttft_ms <= 1200
+    - vis_decode_tps >= 90
+    - hard_quality_pass_rate >= 0.85
+    - image_tokens_per_image <= 1024
+    - vision_encode_ms <= 450
+  guardrail:
+    - ppl_delta_pct <= 2.0
+    - no_oom: true
+    - no_cpu_fallback: true
+    - soak_30min_stable: true
+    - vision_quality_no_regression: true
+  rollback_trigger: >
+    任一 guardrail 违反，或 must_pass 中有 ≥1 项未达标且无更优方案，
+    则回滚到多模态基线 B6_mmproj（mmproj-F16 + q8_0/q4_0 + 双槽 + 无 MTP）。
+
+# ---- 落地复盘 -------------------------------------------------------------
+retrospective:
+  tradeoffs:
+    - point: 显存从哪省（本任务第一优先级）
+      chose: 四刀叠加 —— mmproj F16→Q8（-288 MiB，精确）、主 KV q8q4→q4q4（-512 MiB，同配置 A/B 精确）、
+        Draft KV f16→q4_0（约 -400 MiB，在噪声内）、草稿数 n-max 3→2（-691 MiB，同配置对照）
+      rejected: 只改其中一刀（任何单刀都拉不回 4 GiB 红线）
+      why: >
+        「基线 + MTP」峰值 21,505 MiB（余量 2.99 GiB）已经违规。四刀合计把峰值
+        压到 19,917~20,452 MiB（中位 19,977，余量 4.02~4.54 GiB）。其中最大的一刀是 n-max 3→2：
+        验证 batch 少一个 token，MTP 的验证图与草稿 KV 同时变小。
+        **注意单刀归因的噪声底**：同配置重复启动的峰值离散度约 535 MiB，
+        低于这个量级的单刀收益只能读作量级，不能当精确值。
+    - point: 图像分辨率上限
+      chose: --image-max-tokens 1024
+      rejected: 256 / 512 / 768 / 1280 / 不限制
+      why: >
+        1280 只增加延迟不增加质量；768 在 1200px 网格题上开始丢细节；
+        512 明确答错 F7 的形状；256 连 1600px 密集表格的定位都不可靠。
+        1024 恰好是 llama.cpp 官方提示的 grounding 下限，也是质量拐点。
+    - point: 主模型 KV 精度
+      chose: q4_0/q4_0
+      rejected: q8_0/q4_0（基线）、q8_0/q8_0、f16/f16
+      why: >
+        q8q4 是唯一没有原生 FA 向量 kernel 的组合（启动日志明确警告转 f16 计算）；
+        而 q4_0/q4_0 在 stock 构建里就有向量 kernel。实测 PPL 差 +0.02%、
+        24K 检索 3/3、8 项视觉题 8/8 —— 精度代价在当前口径下不可测，
+        显存却省 512 MiB（同配置 A/B 实测，与几何预测完全一致）。
+    - point: 草稿模型 KV 精度
+      chose: --spec-draft-type-k/v q4_0
+      rejected: 默认 f16
+      why: >
+        草稿模型只负责提案，最终由主模型验证 —— 草稿 KV 的精度损失不会
+        直接进入输出。实测接受率与 n-max=2 的 f16 版本同量级（0.63 vs 0.65），
+        约省 400 MiB（在 ±0.5 GiB 峰值噪声内，只能读作量级）。
+    - point: 是否自定义编译
+      chose: 用 stock 构建
+      rejected: 补编译 q8_0-q4_0 FA 向量 kernel
+      why: >
+        补编译只回收 4.2%（67.9→71.7 t/s，与 ±4 t/s 的离散度同量级）；
+        改用 q4_0/q4_0 后该问题不存在。最终配置在 stock 构建上实测
+        92.65 / 67.12 / 96.19 t/s，与补编译构建（92.65 / 67.12 / 96.13）一致。
+    - point: 并发与单请求上下文
+      chose: --parallel 2（每槽 32K）
+      rejected: --parallel 1（真 64K 单请求）
+      why: >
+        业务以多用户并发为主。代价必须写清：parallel 2 时单请求 >32,768 token
+        会被 400 拒绝；需要真 64K 单请求时切 --parallel 1（本次实测该模式
+        可处理 53,178 token prompt，峰值 19,595 MiB）。
+  risks:
+    - risk: 图像分辨率上限造成的细节丢失
+      trigger: --image-max-tokens < 768 且任务含密集文本/小目标定位
+      impact: OCR 与网格定位开始出错（实测 512 时 F7 形状答错）
+      mitigation: 保持 1024；若业务以文档 OCR 为主，可升到 1280 并接受 +300 ms TTFT
+    - risk: 单请求超过 32,768 token 被拒
+      trigger: --parallel 2 + 长文档
+      impact: HTTP 400，请求失败
+      mitigation: 客户端按 32K 切分；或该请求走 --parallel 1 的实例
+    - risk: 多模态长文本注意力偏移
+      trigger: 图 + >20K 文本，问题位于文本尾部
+      impact: 答成图片内可见内容（所有配置均复现，含 f16 基线）
+      mitigation: 无法用性能手段解决；业务侧应把关键问题放在图片之前，
+        或先做文本检索再带图提问
+    - risk: MTP 接受率随任务类型波动
+      trigger: 自由创作 / 高温度采样
+      impact: 加速比从 1.9× 掉到接近 1×
+      mitigation: 按任务类型动态调整 --spec-draft-n-max；或关闭投机
+    - risk: 安全冗余只剩 0.02 GiB（4.02 vs 4.0）
+      trigger: 声明峰值取三次运行最大值 20,452 MiB
+      impact: 任一次运行若再多 20 MiB 就跌破红线
+      mitigation: >
+        这是**保守口径**下的结果（中位 19,977 MiB，余量 4.48 GiB）。
+        若要求更大的确定余量，可任选其一：把 --image-max-tokens 降到 768（-约 300 MiB）、
+        或把 --spec-draft-n-max 降到 1（-约 300 MiB，吞吐再降 8~10%）、
+        或把 mmproj 降到 Q5_K_M（-约 85 MiB，需先验证质量）。
+        本次保留 1024 + n-max 2，是因为长时压测（205 轮）峰值只到 19,953 MiB。
+    - risk: 图像 token 挤占上下文
+      trigger: 多图 + 长文本
+      impact: 每张 1024px 图占 1024 token，4 张图即占掉单槽 12.5%
+      mitigation: 多图场景下调 --image-max-tokens 到 768
+  lessons:
+    - "**多模态的 TTFT 大头不是 ViT**：1024px 时 ViT 约 405 ms，而 1024 个图像 token 的文本侧 prefill 约 300 ms，两者同量级；2048px 时 ViT 800 ms、文本侧 2700 ms —— 文本侧才是主项。因此压 TTFT 的第一杠杆是「限制图像 token 数」，不是「优化视觉编码器」。"
+    - "**图像 token 数 = (边长/32)²，是平方关系**：1024→1024 token，2048→4096 token。用户上传一张 2048px 图，代价是 1024px 的 4 倍。不加 --image-max-tokens 等于把显存与延迟的控制权交给用户。"
+    - "**多模态的显存峰值点会换位置**：纯文本任务的峰值在最长文本；多模态任务的峰值在「最大图 + 双槽 + MTP 验证」同时发生时。用文本压测的峰值去判断多模态预算，会低估约 1.6 GiB。"
+    - "**显存不够时，先削「验证 batch」而不是「模型精度」**：草稿数 n-max 从 3 降到 2，显存省约 690 MiB（同配置对照），吞吐只掉 3~5%；而把 mmproj 降到 Q4 或把主 KV 降到 q4_0 会直接碰质量红线。"
+    - "**显存峰值的单刀归因有噪声底**：同一份配置重复启动，峰值可在 19,917~20,452 MiB 之间跳动（约 535 MiB），来自 CUDA Graph 捕获顺序与分配器对齐。因此「某项优化省了多少 MiB」只有大于 0.5 GiB 时才可信；报告必须给出端点值与噪声底，而不是把每一刀都写成精确值。"
+    - "**同一份配置要跑两种构建**：本次补编译了 q8_0-q4_0 的 FA 向量 kernel，A/B 只差 4.2% —— 而旧报告估计是 12%。最终改用 q4_0/q4_0 后该编译彻底不必要。结论：先验证「是否真的有收益」，再决定要不要维护自定义构建。"
+    - "**质量守门必须分简单题与难题**：8 项简单题在所有配置下都 8/8（区分不出方案），7 项难题才暴露出「512 cap 丢细节」和「图+长文本注意力偏移」。只跑简单题会得出「所有配置等价」的错误结论。"
+  next_steps:
+    - direction: 视觉侧多图批编码（--mtmd-batch-max-tokens 与多图并发）
+      gain: 多图请求的 ViT 阶段可并行，TTFT 进一步下降
+      priority: P1
+      precondition: 多图业务场景与测试集
+    - direction: mmproj 量化档位的正式质量评测（Q8 vs Q5 vs Q4）
+      gain: 若 Q5 无质量损失，可再省 85 MiB
+      priority: P2
+      precondition: 更大的 OCR/文档基准
+    - direction: 前缀缓存跨图像复用（同一图片多轮提问）
+      gain: 多轮视觉对话的 TTFT 从 ~1 s 降到 ~0.4 s
+      priority: P1
+      precondition: 客户端保持 session
+    - direction: 长上下文 + 图像的位置编码策略
+      gain: 修复「图 + 20K 文本」注意力偏移
+      priority: P2
+      precondition: 上游 llama.cpp 支持或模型侧改造

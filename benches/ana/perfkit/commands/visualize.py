@@ -10,6 +10,8 @@ perfkit visualize —— 性能剖面可视化（自包含 HTML + 内联 SVG）
 
 from __future__ import annotations
 
+import sys
+
 from ..config import PerfConfig, flag_value, load_json
 
 # ---------------------------------------------------------------------------
@@ -35,6 +37,18 @@ C = {
 FONT = ("-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', "
         "'Hiragino Sans GB', 'Microsoft YaHei', sans-serif")
 MONO = "'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace"
+
+
+def _gen_stamp() -> str:
+    """图表生成时间戳。
+
+    为什么要写进页脚：这份 html 会被反复重新生成，而读者往往用浏览器
+    打开一个**缓存里的旧副本**（或打开了另一份 run 的文件），
+    于是看到与报告对不上的数字。把「哪个 run、什么时候生成」印在页脚，
+    一眼就能判断手上这份是不是最新的。
+    """
+    import datetime
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _esc(s) -> str:
@@ -296,29 +310,80 @@ def chart_ops(prof: dict) -> str:
 # 图 4：吞吐对比（理论上界 / 基线 / 各 bundle）
 # ---------------------------------------------------------------------------
 
+def _bundle_decode(b: dict, scn: str | None) -> tuple[float | None, str]:
+    """
+    取一个 bundle 的 Decode 值，**按 KPI 绑定的场景优先**。
+
+    为什么不能直接读 `measured.decode_tps`：那是「该 bundle 的默认口径」，
+    在不同后端上含义不同 —— CPU 配置的扁平值是 depth=8192 的 7.22 t/s，
+    而 KPI 绑定的 short_chat 是 17.54。直接读扁平值会让图与 §5.1 差 2.4×。
+    这与 verify._cell() 的优先级一致（场景绑定 > 扁平值 > 模型估算）。
+    """
+    m = b.get("measured") or {}
+    if scn:
+        v = ((m.get("by_scenario") or {}).get(scn) or {}).get("decode_tps")
+        if v is not None:
+            return v, "实测"
+    v = m.get("decode_tps")
+    if v is not None:
+        return v, "实测"
+    return (b.get("estimated") or {}).get("decode_tps_est"), "模型估算"
+
+
 def chart_throughput(base: dict, opt: dict, ver: dict) -> str:
+    """
+    吞吐对比图。
+
+    这张图曾经有两个会误导人的行为：
+
+    ① 它从 `extra.baseline_native_decode_tps` 取「优化基线」，同时**跳过**
+       `is_baseline` 的 bundle —— 当两者来自不同会话时，图上只剩
+       「一个跨会话基线 + 若干本轮候选」，读者会以为最终方案比基线慢。
+    ② 它读 bundle 的**扁平** `measured.decode_tps` —— 在多深度配置上
+       那是 depth=8192 的值，而 KPI 绑的是 short_chat，两者可差 2.4×。
+
+    现在：基线 bundle 也画、候选一律按 KPI 绑定场景取值；
+    若基线 bundle 与台账声明值相差 >2%，两根都画并各自标注口径。
+    """
     ub = base["_derived"]["decode_tps_upper_bound"]
     native = (base.get("extra") or {}).get("baseline_native_decode_tps")
+    # KPI 把 decode_tps 绑在哪个场景上？以 verify 的对比行为准（那是报告 §5.1 的口径）。
+    _dec_row = next((r for r in (ver or {}).get("comparison") or []
+                     if r.get("key") == "decode_tps"), None)
+    scn = (_dec_row or {}).get("scenario")
+    base_b = next((b for b in opt["bundles"] if b.get("is_baseline")), None)
+    base_dec, _ = _bundle_decode(base_b, scn) if base_b else (None, "")
+
     items = [("理论上界", ub, C["upper"], "带宽 ÷ 权重体积（不含 KV 读）")]
-    if native:
-        # live 模式若只跑了部分场景，可能推不出「原生基线」——
-        # 缺就少画一根柱子，不要用 None 去参与 max()。
+    # 基线：优先画 bundle 的实测（与候选同会话、同场景、可比）；
+    # 台账 native 与之相差 >2% 时再补一根，标注为「台账声明」。
+    if base_dec:
+        items.append(("优化基线", base_dec, C["baseline"],
+                      f"实测（{scn}）" if scn else "本次实测"))
+        if native and abs(native / base_dec - 1) > 0.02:
+            items.append(("台账声明基线", native, C["baseline"],
+                          "另一口径/会话，仅供对照"))
+    elif native:
         items.append(("优化基线", native, C["baseline"], "本次实测"))
+
     for b in opt["bundles"]:
         if b.get("is_baseline"):
             continue
-        m = b.get("measured") or {}
-        e = b["estimated"]
-        v = m.get("decode_tps") or e["decode_tps_est"]
-        src = "实测" if m.get("decode_tps") else "模型估算"
+        v, src = _bundle_decode(b, scn)
+        if v is None:
+            continue
         items.append((b["id"], v, C["optimized"], f'{b["name"][:14]}（{src}）'))
-    W, H = 720, 60 + len(items) * 34 + 20
+    W, H = 720, 60 + len(items) * 34 + 20 + 34
     L, pw = 132, 470
     vmax = max(v for _, v, _, _ in items) * 1.15
     s = _svg_open(W, H)
+    _mtp = any("spec" in " ".join(b.get("startup_flags") or []) for b in opt["bundles"])
     s += _title(W, "Decode 吞吐：理论上界 vs 基线 vs 候选方案",
                 f"理论上界 {ub} t/s（{base['theoretical']['vram_bandwidth_gbps']} GB/s "
-                f"÷ {base['theoretical']['weight_gib']} GiB）")
+                f"÷ {base['theoretical']['weight_gib']} GiB）"
+                + ("　· 非投机口径：它假设一次权重读取只产出一个 token，"
+                   "因此 MTP 配置的实测可以合法地高于它，不代表突破物理带宽"
+                   if _mtp else ""))
     y = 56
     for name, v, col, note in items:
         w = pw * v / vmax
@@ -332,6 +397,11 @@ def chart_throughput(base: dict, opt: dict, ver: dict) -> str:
         y += 34
     s.append(f'<line x1="{L+pw*ub/vmax:.1f}" y1="52" x2="{L+pw*ub/vmax:.1f}" '
              f'y2="{y}" stroke="{C["upper"]}" stroke-dasharray="4 3" stroke-width="1.5"/>')
+    # 可比性脚注：候选柱来自不同采样批次，不能当成严格的横向排名。
+    s.append(f'<text x="{L}" y="{y+22}" font-family="{FONT}" font-size="10.5" '
+             f'fill="{C["ink_dim"]}">'
+             f'⚠️ 各柱的采样批次不同（重复次数、场景集、时刻均可能不同），'
+             f'差异小于 ±10% 时不应据此排序；选型依据见报告 §4/§6。</text>')
     s.append("</svg>")
     return "".join(s)
 
@@ -657,7 +727,9 @@ def build_html(cfg: PerfConfig, defn: dict, base: dict, prof: dict, diag: dict,
 
   <footer>
     由 perfkit 自动生成 · 数据来源见 output/{_esc(cfg.run_id)}/report.md 附录 B<br>
-    图中实心点/实心条为实测值，空心点为实测对照，标注 [D]/[I] 的为推导值。
+    图中实心点/实心条为实测值，空心点为实测对照，标注 [D]/[I] 的为推导值。<br>
+    <span style="font-family:{MONO}">run={_esc(cfg.run_id)} · 生成于 {_esc(_gen_stamp())} ·
+    基线与候选的取值口径见报告 §5.1 与「结论摘要」</span>
   </footer>
 </div>
 </body>

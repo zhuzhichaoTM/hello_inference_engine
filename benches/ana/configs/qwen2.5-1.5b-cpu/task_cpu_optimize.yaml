@@ -47,12 +47,19 @@ kpis:
     name: Prefill 吞吐
     unit: tokens/s
     direction: higher
-    target: 30
+    target: 10
     scenario: long_ctx_8k_kvq8
     target_rationale: >
-      8K 深度实测 34.65 t/s 的 87%。留 13% 余量是因为 Prefill 对系统负载更敏感
-      （Compute-bound，受 CPU 抢占影响更大），目标不宜贴着实测值设。
-    definition: prompt_tokens / prefill_seconds；口径取 8K 深度（含 KV 读开销）
+      **本项的目标曾被设错，已修正。** 原目标 30 是拿「F16 KV @ 8K 的 34.65 t/s」
+      算的 87%，但本 KPI 绑定的是 **q8_0 KV @ 8K** 场景 —— 该场景实测只有 11.48 t/s。
+      q8_0 KV 让 CPU Prefill 从 34.65 掉到 11.48（**-67%**），
+      因为 CPU 的 FA 路径要对量化 KV 做逐元素转换，而 Prefill 是 compute-bound，
+      这笔开销直接吃掉算力。目标 10 取 11.48 的 87%。
+      **这条同时也是 KV 量化的真实代价**：Decode +9%（7.22→7.89）换来 Prefill -67%，
+      在 CPU 后端上这个交换并不划算 —— 除非上下文长到 Decode 才是瓶颈。
+    definition: >
+      prompt_tokens / prefill_seconds；口径取 8K 深度、q8_0 KV（含转换开销）。
+      **不要拿 F16 场景的 34.65 与本项比较** —— 那是另一个 KV 精度。
   - key: ttft_ms
     name: 首 Token 延迟
     unit: ms
@@ -114,7 +121,7 @@ acceptance:
     - peak_ram_mib <= 4096
   should_pass:
     - decode_tps >= 15        # 短上下文上界
-    - prefill_tps >= 30
+    - prefill_tps >= 10
     - thread_scaling >= 0.95
   guardrail:
     - ppl_delta_pct <= 2.0
