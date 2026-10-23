@@ -3,12 +3,14 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 目的与项目概况
+
 - **目标模型**：Qwen3.8-27B (27.32B 参数)
-- **部署环境**：云端单卡 NVIDIA GeForce RTX 4090 
+- **部署环境**：云端单卡 NVIDIA GeForce RTX 4090
 - **推理引擎**：llama.cpp (CUDA 后端，sm_89 架构编译)
 - **量化策略**：`Q4_K_M` 甜点档位主模型 + `Q4_0` MTP Draft 投机解码加速
 
 ## 云端算力登录信息
+
 - **SSH 指令**：`ssh -p 37607 root@connect.cqa1.seetacloud.com`
 - **密码**：`4g3+Kjz0CNHl`
 - **主要工作目录**：数据盘 `/root/autodl-tmp/`（模型在 `/root/autodl-tmp/models/`，源码在 `/root/autodl-tmp/llama.cpp/`）
@@ -16,7 +18,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 常用服务管理与开发命令
 
 ### 1. 启动推理服务 (llama-server)
+
 包含全层显卡卸载、MTP 投机解码、mmproj 多模态、64K 上下文、混合 KV-Cache 量化、Flash Attention：
+
 ```bash
 cd /root/autodl-tmp/llama.cpp/build/bin
 
@@ -40,6 +44,7 @@ cd /root/autodl-tmp/llama.cpp/build/bin
 ```
 
 ### 2. 性能压测与基准评估
+
 ```bash
 # 执行原生 Prefill/Decode 基准压测
 /root/autodl-tmp/llama.cpp/build/bin/llama-bench \
@@ -48,6 +53,7 @@ cd /root/autodl-tmp/llama.cpp/build/bin
 ```
 
 ### 3. API 调用与验证
+
 ```bash
 # 检查模型挂载
 curl http://127.0.0.1:8000/v1/models

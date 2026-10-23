@@ -1338,7 +1338,7 @@ init_model()                                  simple-backend.cpp:57
  │    └── ggml_backend_load_best("cuda", ...) ggml-backend-reg.cpp:481
  │         └── (无匹配文件，返回 nullptr)
  ├── ggml_backend_init_best()                 ggml-backend-reg.cpp:382
- │    ├── ggml_backend_dev_by_type(GPU)       ggml-backend-reg.cpp:355
+│    ├── ggml_backend_dev_by_type(GPU)       ggml-backend-reg.cpp:355
  │    │    └── ggml_backend_dev_count()
  │    │         └── get_reg()                 ggml-backend-reg.cpp:292
  │    │              └── ggml_backend_registry::ggml_backend_registry()  :119

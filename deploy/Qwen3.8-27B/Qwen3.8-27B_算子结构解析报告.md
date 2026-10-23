@@ -1,25 +1,25 @@
 # Qwen3.8-27B 算子节点结构解析报告
 
-**解析依据**：`quant_Q4_K_M_imatrix.log`（llama.cpp `llama-quantize`，Q4_K_M + imatrix）
-**权重格式**：GGUF V3（输入 BF16 → 输出 Q4_K_M）
+**解析依据**：`quant_Q4_K_M_imatrix.log`（llama.cpp `llama-quantize`，Q4_K_M + imatrix）  
+**权重格式**：GGUF V3（输入 BF16 → 输出 Q4_K_M）  
 **日志完整性**：完整（1–866 号张量全部覆盖，无截断）
 
 ---
 
 ## 一、日志可信度与关键元信息
 
-| 项 | 值 | 说明 |
-|---|---|---|
-| 引擎 | llama.cpp `0.4.1-dev` (build 1, commit `60081bb`), GNU 11.4.0, x86_64 | 定制分支，arch 为 `qwen35` |
-| 硬件 | Tesla V100S-PCIE-32GB, CC 7.0, VRAM 32494 MiB | CC 7.0 = **无 BF16/FP8 Tensor Core**，无 FP8 |
-| 输入模型 | `Qwen3.8-27B-BF16.gguf`，43 个 KV，**866 张量** | `general.file_type = 32` → BF16 |
-| 张量类型分布 | **f32: 360 / bf16: 506** | 506 个 bf16 全部被量化 |
-| 量化类型分布 | **q4_K: 439 / q6_K: 67**（f32 保持 360） | 合计 506 ✔ |
-| 体积 | 52115.19 MiB (16.00 BPW) → 16021.46 MiB (4.92 BPW) | 压缩比 **3.25×** |
-| 量化耗时 | 859029.33 ms（≈14.3 min），10 线程 | — |
-| imatrix | **496 条 entry**，7 chunks，PPL = 24.4637 ± 3.02382 | `imatrix-UD-Qwen3.8-27B.gguf` |
-| 校准集 | `calibration/self_generated.txt` | 自生成（self_gen） |
-| 上下文 | 262144 | RoPE freq_base = 1e7 |
+| 项       | 值                                                                     | 说明                                        |
+| ------- | --------------------------------------------------------------------- | ----------------------------------------- |
+| 引擎      | llama.cpp `0.4.1-dev` (build 1, commit `60081bb`), GNU 11.4.0, x86_64 | 定制分支，arch 为 `qwen35`                      |
+| 硬件      | Tesla V100S-PCIE-32GB, CC 7.0, VRAM 32494 MiB                         | CC 7.0 = **无 BF16/FP8 Tensor Core**，无 FP8 |
+| 输入模型    | `Qwen3.8-27B-BF16.gguf`，43 个 KV，**866 张量**                            | `general.file_type = 32` → BF16           |
+| 张量类型分布  | **f32: 360 / bf16: 506**                                              | 506 个 bf16 全部被量化                          |
+| 量化类型分布  | **q4_K: 439 / q6_K: 67**（f32 保持 360）                                  | 合计 506 ✔                                  |
+| 体积      | 52115.19 MiB (16.00 BPW) → 16021.46 MiB (4.92 BPW)                    | 压缩比 **3.25×**                             |
+| 量化耗时    | 859029.33 ms（≈14.3 min），10 线程                                         | —                                         |
+| imatrix | **496 条 entry**，7 chunks，PPL = 24.4637 ± 3.02382                      | `imatrix-UD-Qwen3.8-27B.gguf`             |
+| 校准集     | `calibration/self_generated.txt`                                      | 自生成（self_gen）                             |
+| 上下文     | 262144                                                                | RoPE freq_base = 1e7                      |
 
 > ⚠️ 与 `quant_config.yaml` 的 `tensor_overrides`（blk.0/1/62/63→Q6_K、attn_q/k/ffn_gate/up→Q5_K_M）**不一致**：本日志是**标准 Q4_K_M recipe**，未走 UD 覆盖路径。对比文件应为 `quant_UD_Q4_K_M.log`。做方案选型时需注意这一点。
 
@@ -29,21 +29,21 @@
 
 ### 2.1 全局超参
 
-| 参数 | 值 | 推断 |
-|---|---|---|
-| `block_count` | **65** | blk.0–63 主层(64) + blk.64 MTP 块(1) |
-| `embedding_length` | 5120 | hidden |
-| `feed_forward_length` | 17408 | FFN 中间维 |
-| `head_count / head_count_kv` | 24 / 4 | GQA = 6:1 |
-| `key_length / value_length` | 256 / 256 | head_dim = 256 |
-| `rope.dimension_count` | 64 | **部分旋转**：256 维中仅 64 维加 RoPE |
-| `rope.dimension_sections` | [11,11,10,0] | **MRoPE**（多模态 4 段式），与 `tags=["image-text-to-text"]` 吻合 |
-| `full_attention_interval` | 4 | 每 4 层 1 层全注意力 |
-| `attention.recurrent_layers` | `arr[bool,65]` | 层型掩码 |
-| `nextn_predict_layers` | 1 | MTP / 投机解码草稿头 |
-| `ssm.conv_kernel / state_size / group_count / time_step_rank / inner_size` | 4 / 128 / 16 / 48 / 6144 | 线性注意力分支参数 |
-| vocab / eos | 248320 / 248046 | gpt2 BPE，pre=`qwen35`，`add_bos=false` |
-| norm eps | 1e-6 | RMSNorm |
+| 参数                                                                         | 值                        | 推断                                                     |
+| -------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------ |
+| `block_count`                                                              | **65**                   | blk.0–63 主层(64) + blk.64 MTP 块(1)                      |
+| `embedding_length`                                                         | 5120                     | hidden                                                 |
+| `feed_forward_length`                                                      | 17408                    | FFN 中间维                                                |
+| `head_count / head_count_kv`                                               | 24 / 4                   | GQA = 6:1                                              |
+| `key_length / value_length`                                                | 256 / 256                | head_dim = 256                                         |
+| `rope.dimension_count`                                                     | 64                       | **部分旋转**：256 维中仅 64 维加 RoPE                            |
+| `rope.dimension_sections`                                                  | [11,11,10,0]             | **MRoPE**（多模态 4 段式），与 `tags=["image-text-to-text"]` 吻合 |
+| `full_attention_interval`                                                  | 4                        | 每 4 层 1 层全注意力                                          |
+| `attention.recurrent_layers`                                               | `arr[bool,65]`           | 层型掩码                                                   |
+| `nextn_predict_layers`                                                     | 1                        | MTP / 投机解码草稿头                                          |
+| `ssm.conv_kernel / state_size / group_count / time_step_rank / inner_size` | 4 / 128 / 16 / 48 / 6144 | 线性注意力分支参数                                              |
+| vocab / eos                                                                | 248320 / 248046          | gpt2 BPE，pre=`qwen35`，`add_bos=false`                  |
+| norm eps                                                                   | 1e-6                     | RMSNorm                                                |
 
 ### 2.2 拓扑：混合注意力（Hybrid Attention）
 
@@ -74,40 +74,40 @@ Sampler (temp 1.0 / top_p 0.95 / top_k 20)
 
 **层型统计（与日志逐块核对一致）**
 
-| 层型 | 层号 | 数量 | 判定依据 |
-|---|---|---|---|
-| **循环层**（线性注意力/SSM） | 0,1,2,4,5,6,8,…,62 | **48** | 含 `attn_qkv` + `ssm_*` |
-| **全注意力层** | 3,7,11,15,19,23,27,31,35,39,43,47,51,55,59,63 | **16** | 含 `attn_q`/`attn_k`/`attn_v` |
-| **MTP 块** | 64 | **1** | 含 `nextn.*`，全注意力结构 |
+| 层型                 | 层号                                            | 数量     | 判定依据                         |
+| ------------------ | --------------------------------------------- | ------ | ---------------------------- |
+| **循环层**（线性注意力/SSM） | 0,1,2,4,5,6,8,…,62                            | **48** | 含 `attn_qkv` + `ssm_*`       |
+| **全注意力层**          | 3,7,11,15,19,23,27,31,35,39,43,47,51,55,59,63 | **16** | 含 `attn_q`/`attn_k`/`attn_v` |
+| **MTP 块**          | 64                                            | **1**  | 含 `nextn.*`，全注意力结构           |
 
 ### 2.3 三种层的张量构成
 
 **① 循环层（48 个，以 blk.0 为例）**
 
-| 张量 | 形状 | 作用 |
-|---|---|---|
-| `attn_norm.weight` | [5120] f32 | 前置 RMSNorm |
-| `attn_qkv.weight` | [5120, 10240] | 融合 QKV 投影（Q=2048, K=2048, V=6144） |
-| `attn_gate.weight` | [5120, 6144] | 线性注意力输出门 |
-| `ssm_conv1d.weight` | [4, 10240] f32 | 深度可分离因果卷积（k=4） |
-| `ssm_a` | [48] f32 | 每头衰减系数 A_log |
-| `ssm_dt.bias` | [48] f32 | 时间步偏置 |
-| `ssm_alpha.weight` | [5120, 48] | 输入相关 α（衰减门）投影 |
-| `ssm_beta.weight` | [5120, 48] | 输入相关 β（写入门）投影 |
-| `ssm_norm.weight` | [128] f32 | 每头 gated RMSNorm（head_v_dim=128） |
-| `ssm_out.weight` | [6144, 5120] | SSM 分支输出投影 |
-| `post_attention_norm.weight` | [5120] f32 | 残差前 RMSNorm |
-| `ffn_gate / ffn_up / ffn_down` | [5120,17408]×2 / [17408,5120] | SwiGLU FFN |
+| 张量                             | 形状                            | 作用                                |
+| ------------------------------ | ----------------------------- | --------------------------------- |
+| `attn_norm.weight`             | [5120] f32                    | 前置 RMSNorm                        |
+| `attn_qkv.weight`              | [5120, 10240]                 | 融合 QKV 投影（Q=2048, K=2048, V=6144） |
+| `attn_gate.weight`             | [5120, 6144]                  | 线性注意力输出门                          |
+| `ssm_conv1d.weight`            | [4, 10240] f32                | 深度可分离因果卷积（k=4）                    |
+| `ssm_a`                        | [48] f32                      | 每头衰减系数 A_log                      |
+| `ssm_dt.bias`                  | [48] f32                      | 时间步偏置                             |
+| `ssm_alpha.weight`             | [5120, 48]                    | 输入相关 α（衰减门）投影                     |
+| `ssm_beta.weight`              | [5120, 48]                    | 输入相关 β（写入门）投影                     |
+| `ssm_norm.weight`              | [128] f32                     | 每头 gated RMSNorm（head_v_dim=128）  |
+| `ssm_out.weight`               | [6144, 5120]                  | SSM 分支输出投影                        |
+| `post_attention_norm.weight`   | [5120] f32                    | 残差前 RMSNorm                       |
+| `ffn_gate / ffn_up / ffn_down` | [5120,17408]×2 / [17408,5120] | SwiGLU FFN                        |
 
 **② 全注意力层（16 个，以 blk.3 为例）**
 
-| 张量 | 形状 | 作用 |
-|---|---|---|
-| `attn_q.weight` | [5120, 12288] | Q 投影（6144）+ **Q-Gate**（6144）融合 |
-| `attn_k / attn_v` | [5120, 1024] | K/V 投影（4 头 × 256） |
-| `attn_q_norm / attn_k_norm` | [256] f32 | QK-Norm（per-head RMSNorm） |
-| `attn_output.weight` | [6144, 5120] | 输出投影 |
-| + 与循环层相同的 norm / FFN | | |
+| 张量                          | 形状            | 作用                             |
+| --------------------------- | ------------- | ------------------------------ |
+| `attn_q.weight`             | [5120, 12288] | Q 投影（6144）+ **Q-Gate**（6144）融合 |
+| `attn_k / attn_v`           | [5120, 1024]  | K/V 投影（4 头 × 256）              |
+| `attn_q_norm / attn_k_norm` | [256] f32     | QK-Norm（per-head RMSNorm）      |
+| `attn_output.weight`        | [6144, 5120]  | 输出投影                           |
+| + 与循环层相同的 norm / FFN        |               |                                |
 
 **③ MTP 块（blk.64）**
 
@@ -121,32 +121,33 @@ Sampler (temp 1.0 / top_p 0.95 / top_k 20)
 
 **总量：866 张量** = 506 线性权重 + 360 非量化参数
 
-| 张量基名 | 数量 | 量化类型 | 归属 |
-|---|---:|---|---|
-| `attn_norm.weight` | 65 | f32 | 全部层 |
-| `post_attention_norm.weight` | 65 | f32 | 全部层 |
-| `ffn_gate.weight` | 65 | q4_K ×65 | 全部层 |
-| `ffn_up.weight` | 65 | q4_K ×65 | 全部层 |
-| `ffn_down.weight` | 65 | **q6_K ×33**, q4_K ×32 | 全部层 |
-| `attn_qkv.weight` | 48 | **q6_K ×24**, q4_K ×24 | 循环层 |
-| `attn_gate.weight` | 48 | q4_K ×48 | 循环层 |
-| `ssm_alpha / ssm_beta.weight` | 48 / 48 | q4_K ×48 / ×48 | 循环层 |
-| `ssm_out.weight` | 48 | q4_K ×48 | 循环层 |
-| `ssm_a` | 48 | f32 | 循环层 |
-| `ssm_dt.bias` | 48 | f32 | 循环层 |
-| `ssm_conv1d.weight` | 48 | f32 | 循环层 |
-| `ssm_norm.weight` | 48 | f32 | 循环层 |
-| `attn_q / attn_k / attn_output.weight` | 17 / 17 / 17 | q4_K ×17 各 | 全注意力(16) + MTP(1) |
-| `attn_v.weight` | 17 | **q6_K ×9**, q4_K ×8 | 全注意力 + MTP |
-| `attn_q_norm / attn_k_norm.weight` | 17 / 17 | f32 | 全注意力 + MTP |
-| `nextn.eh_proj.weight` | 1 | q4_K | MTP |
-| `nextn.enorm / hnorm / shared_head_norm` | 3 | f32 | MTP |
-| `token_embd.weight` | 1 | q4_K | 全局 |
-| `output.weight` | 1 | **q6_K** | 全局 |
-| `output_norm.weight` | 1 | f32 | 全局 |
-| **合计** | **866** | | |
+| 张量基名                                     |           数量 | 量化类型                   | 归属                |
+| ---------------------------------------- | -----------: | ---------------------- | ----------------- |
+| `attn_norm.weight`                       |           65 | f32                    | 全部层               |
+| `post_attention_norm.weight`             |           65 | f32                    | 全部层               |
+| `ffn_gate.weight`                        |           65 | q4_K ×65               | 全部层               |
+| `ffn_up.weight`                          |           65 | q4_K ×65               | 全部层               |
+| `ffn_down.weight`                        |           65 | **q6_K ×33**, q4_K ×32 | 全部层               |
+| `attn_qkv.weight`                        |           48 | **q6_K ×24**, q4_K ×24 | 循环层               |
+| `attn_gate.weight`                       |           48 | q4_K ×48               | 循环层               |
+| `ssm_alpha / ssm_beta.weight`            |      48 / 48 | q4_K ×48 / ×48         | 循环层               |
+| `ssm_out.weight`                         |           48 | q4_K ×48               | 循环层               |
+| `ssm_a`                                  |           48 | f32                    | 循环层               |
+| `ssm_dt.bias`                            |           48 | f32                    | 循环层               |
+| `ssm_conv1d.weight`                      |           48 | f32                    | 循环层               |
+| `ssm_norm.weight`                        |           48 | f32                    | 循环层               |
+| `attn_q / attn_k / attn_output.weight`   | 17 / 17 / 17 | q4_K ×17 各             | 全注意力(16) + MTP(1) |
+| `attn_v.weight`                          |           17 | **q6_K ×9**, q4_K ×8   | 全注意力 + MTP        |
+| `attn_q_norm / attn_k_norm.weight`       |      17 / 17 | f32                    | 全注意力 + MTP        |
+| `nextn.eh_proj.weight`                   |            1 | q4_K                   | MTP               |
+| `nextn.enorm / hnorm / shared_head_norm` |            3 | f32                    | MTP               |
+| `token_embd.weight`                      |            1 | q4_K                   | 全局                |
+| `output.weight`                          |            1 | **q6_K**               | 全局                |
+| `output_norm.weight`                     |            1 | f32                    | 全局                |
+| **合计**                                   |      **866** |                        |                   |
 
 **恒等式校验（三重一致，可确认解析无误）**
+
 - `506 量化张量` = 195(FFN) + 240(循环分支) + 68(全注意力 Q/K/V/O) + 1(eh_proj) + 1(token_embd) + 1(output) ✔
 - `360 f32 张量` = 216(RMSNorm) + 48(ssm_a) + 48(ssm_dt.bias) + 48(ssm_conv1d) ✔
 - `67 q6_K` = 33(ffn_down) + 24(attn_qkv) + 9(attn_v) + 1(output) ✔
@@ -155,17 +156,17 @@ Sampler (temp 1.0 / top_p 0.95 / top_k 20)
 
 > 说明：日志给出的是**权重块**，算子节点数依赖引擎的融合策略。下表按 **llama.cpp 图节点粒度**（含常见融合）推算，并给出公式以便复用。
 
-| 作用域 | 单块节点数 | 块数 | 小计 |
-|---|---:|---:|---:|
-| 公共部分（2×RMSNorm + FFN 3×GEMM + SiLU + Mul + 2×Add） | 9 | 65 | **585** |
-| 循环层专属（QKV/Gate/α/β/Out 5×GEMM + ssm_norm + conv1d + SiLU + 2×L2Norm + DeltaRule + 2×Mul + Sigmoid + decay-softplus + Split） | 16 | 48 | **768** |
-| 全注意力层专属（Q/K/V/O 4×GEMM + 2×RMSNorm + RoPE + SDPA + Sigmoid + Mul + KV-Write + Reshape） | 12 | 16 | **192** |
-| MTP 块专属（同全注意力 12 + eh_proj GEMM + 3×RMSNorm + Concat） | 17 | 1 | **17** |
-| 全局（Gather + token_embd + output_norm + LM-Head GEMM + Sampler） | 5 | 1 | **5** |
-| **合计（统一口径，含 Split/Reshape/Transpose 胶水算子）** | | | **1567** |
-| **合计（融合粒度，胶水算子并入相邻 kernel）** | | | **≈ 1471** |
+| 作用域                                                                                                                         | 单块节点数 | 块数 |         小计 |
+| --------------------------------------------------------------------------------------------------------------------------- | ----: | -: | ---------: |
+| 公共部分（2×RMSNorm + FFN 3×GEMM + SiLU + Mul + 2×Add）                                                                           |     9 | 65 |    **585** |
+| 循环层专属（QKV/Gate/α/β/Out 5×GEMM + ssm_norm + conv1d + SiLU + 2×L2Norm + DeltaRule + 2×Mul + Sigmoid + decay-softplus + Split） |    16 | 48 |    **768** |
+| 全注意力层专属（Q/K/V/O 4×GEMM + 2×RMSNorm + RoPE + SDPA + Sigmoid + Mul + KV-Write + Reshape）                                      |    12 | 16 |    **192** |
+| MTP 块专属（同全注意力 12 + eh_proj GEMM + 3×RMSNorm + Concat）                                                                       |    17 |  1 |     **17** |
+| 全局（Gather + token_embd + output_norm + LM-Head GEMM + Sampler）                                                              |     5 |  1 |      **5** |
+| **合计（统一口径，含 Split/Reshape/Transpose 胶水算子）**                                                                                 |       |    |   **1567** |
+| **合计（融合粒度，胶水算子并入相邻 kernel）**                                                                                                |       |    | **≈ 1471** |
 
-> ⚠️ 本表已按**统一口径（含胶水算子 Split/Reshape/Transpose）**修正为 **1567**，与 §四 逐项加总一致。早期口径曾记为 ≈1471（未计入胶水算子）。口径差异与自校验详见 **§九**。
+> ⚠️ 本表已按**统一口径（含胶水算子 Split/Reshape/Transpose）**&#x4FEE;正为 **1567**，与 §四 逐项加总一致。早期口径曾记为 ≈1471（未计入胶水算子）。口径差异与自校验详见 **§九**。
 
 ---
 
@@ -173,39 +174,39 @@ Sampler (temp 1.0 / top_p 0.95 / top_k 20)
 
 ### 4.1 算子类型 × 出现次数 × 作用
 
-| # | 算子 | 次数 | 作用说明 | 对应权重/依据 |
-|---|---|---:|---|---|
-| 1 | **MatMul / GEMM(GEMV)** | **506** | 全部线性投影。prefill 为 GEMM（计算受限），decode 为 GEMV（**访存受限**） | 506 个量化张量 |
-| 2 | **RMSNorm** | **216** | 归一化。含 attn_norm 65、post_attention_norm 65、ssm_norm(gated,per-head) 48、attn_q_norm 17、attn_k_norm 17、output_norm 1、nextn 3 | 216 个 f32 norm 张量 |
-| 3 | **Residual Add** | **130** | 每块 2 次（注意力后、FFN 后） | 拓扑推算 |
-| 4 | **SiLU / Swish** | **113** | FFN 激活 65 + 循环层 conv1d 后激活 48 | — |
-| 5 | **Elementwise Mul** | **178** | FFN 门控 65 + 线性注意力输出门 48 + Q-Gate(sigmoid 后) 17 + DeltaNet 内 β 门控 48 | — |
-| 6 | **Causal Conv1D (depthwise, k=4)** | **48** | 线性注意力分支的短卷积，通道数 10240 | `ssm_conv1d.weight` |
-| 7 | **Gated Delta Rule / 分块线性递推扫描** | **48** | 核心 SSM 算子，逐头递推 S ← S·α + β·(k⊗v)，**非 O(n²)** | `ssm_a`, `ssm_dt.bias` |
-| 8 | **L2 Normalize** | **96** | 线性注意力内对 Q/K 做 L2 归一（每层 2 次） | DeltaNet 结构约定 |
-| 9 | **Softplus / Exp** | **48** | 衰减门 `g = -exp(A_log)·softplus(a + dt_bias)` | `ssm_a`, `ssm_dt.bias` |
-| 10 | **Sigmoid** | **65** | Q-Gate 17 + DeltaNet β 门控 48 | — |
-| 11 | **RoPE（部分旋转，64/256 维，MRoPE 4 段）** | **17** | 位置编码，仅作用于全注意力层 | `rope.dimension_sections=[11,11,10,0]` |
-| 12 | **Scaled Dot-Product Attention (GQA 6:1, causal)** | **17** | Flash-Attention / 分块注意力 | — |
-| 13 | **KV Cache Write/Read** | **17** | 仅全注意力层有 KV Cache | `FA_QUANTS=q4_0/q8_0/f16/bf16` |
-| 14 | **Embedding Gather** | **1** | token → hidden | `token_embd.weight` |
-| 15 | **Concat** | **1** | MTP 块拼接 `norm(embd) ‖ norm(hidden)` | `nextn.enorm/hnorm/eh_proj` |
-| 16 | **Sampler（Softmax + Top-K + Top-P + Temp）** | **1** | 采样，非权重算子 | `sampling.top_k=20, top_p=0.95` |
-| 17 | **Split / Reshape / Transpose** | **65** | QKV 拆分、多头重排（胶水算子） | — |
-| | **合计** | **1567** | 与 §3.2 统一口径一致 ✔ | |
+| #  | 算子                                                 |       次数 | 作用说明                                                                                                                      | 对应权重/依据                                |
+| -- | -------------------------------------------------- | -------: | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| 1  | **MatMul / GEMM(GEMV)**                            |  **506** | 全部线性投影。prefill 为 GEMM（计算受限），decode 为 GEMV（**访存受限**）                                                                       | 506 个量化张量                              |
+| 2  | **RMSNorm**                                        |  **216** | 归一化。含 attn_norm 65、post_attention_norm 65、ssm_norm(gated,per-head) 48、attn_q_norm 17、attn_k_norm 17、output_norm 1、nextn 3 | 216 个 f32 norm 张量                      |
+| 3  | **Residual Add**                                   |  **130** | 每块 2 次（注意力后、FFN 后）                                                                                                        | 拓扑推算                                   |
+| 4  | **SiLU / Swish**                                   |  **113** | FFN 激活 65 + 循环层 conv1d 后激活 48                                                                                             | —                                      |
+| 5  | **Elementwise Mul**                                |  **178** | FFN 门控 65 + 线性注意力输出门 48 + Q-Gate(sigmoid 后) 17 + DeltaNet 内 β 门控 48                                                       | —                                      |
+| 6  | **Causal Conv1D (depthwise, k=4)**                 |   **48** | 线性注意力分支的短卷积，通道数 10240                                                                                                     | `ssm_conv1d.weight`                    |
+| 7  | **Gated Delta Rule / 分块线性递推扫描**                    |   **48** | 核心 SSM 算子，逐头递推 S ← S·α + β·(k⊗v)，**非 O(n²)**                                                                              | `ssm_a`, `ssm_dt.bias`                 |
+| 8  | **L2 Normalize**                                   |   **96** | 线性注意力内对 Q/K 做 L2 归一（每层 2 次）                                                                                               | DeltaNet 结构约定                          |
+| 9  | **Softplus / Exp**                                 |   **48** | 衰减门 `g = -exp(A_log)·softplus(a + dt_bias)`                                                                               | `ssm_a`, `ssm_dt.bias`                 |
+| 10 | **Sigmoid**                                        |   **65** | Q-Gate 17 + DeltaNet β 门控 48                                                                                              | —                                      |
+| 11 | **RoPE（部分旋转，64/256 维，MRoPE 4 段）**                  |   **17** | 位置编码，仅作用于全注意力层                                                                                                            | `rope.dimension_sections=[11,11,10,0]` |
+| 12 | **Scaled Dot-Product Attention (GQA 6:1, causal)** |   **17** | Flash-Attention / 分块注意力                                                                                                   | —                                      |
+| 13 | **KV Cache Write/Read**                            |   **17** | 仅全注意力层有 KV Cache                                                                                                          | `FA_QUANTS=q4_0/q8_0/f16/bf16`         |
+| 14 | **Embedding Gather**                               |    **1** | token → hidden                                                                                                            | `token_embd.weight`                    |
+| 15 | **Concat**                                         |    **1** | MTP 块拼接 `norm(embd) ‖ norm(hidden)`                                                                                       | `nextn.enorm/hnorm/eh_proj`            |
+| 16 | **Sampler（Softmax + Top-K + Top-P + Temp）**        |    **1** | 采样，非权重算子                                                                                                                  | `sampling.top_k=20, top_p=0.95`        |
+| 17 | **Split / Reshape / Transpose**                    |   **65** | QKV 拆分、多头重排（胶水算子）                                                                                                         | —                                      |
+|    | **合计**                                             | **1567** | 与 §3.2 统一口径一致 ✔                                                                                                           |                                        |
 
 ### 4.2 算子族归类（工程视角）
 
-| 族 | 算子 | 节点数 | 优化优先级 |
-|---|---|---:|---|
-| **线性层（权重）** | MatMul/GEMV | 506 | ★★★ 访存瓶颈（4.92 BPW，16 GB 权重） |
-| **归一化** | RMSNorm / L2Norm | 312 | ★★ 融合进 GEMM 前处理 |
-| **逐元素** | Add / Mul / SiLU / Sigmoid / Softplus | 472 | ★★ 全部可 kernel-fuse |
-| **序列算子** | Conv1D / DeltaRule / SDPA / RoPE | 130 | ★★★ 延迟关键路径 |
-| **状态算子** | KV-Cache | 17 | ★★★ 长上下文显存瓶颈 |
-| **胶水算子** | Split / Reshape / Transpose | 65 | ★ 融合进相邻 kernel |
-| **前后处理** | Gather / Concat / Sampler | 3 | ★ 可忽略 |
-| **合计** | | **1567** | |
+| 族           | 算子                                    |      节点数 | 优化优先级                       |
+| ----------- | ------------------------------------- | -------: | --------------------------- |
+| **线性层（权重）** | MatMul/GEMV                           |      506 | ★★★ 访存瓶颈（4.92 BPW，16 GB 权重） |
+| **归一化**     | RMSNorm / L2Norm                      |      312 | ★★ 融合进 GEMM 前处理             |
+| **逐元素**     | Add / Mul / SiLU / Sigmoid / Softplus |      472 | ★★ 全部可 kernel-fuse          |
+| **序列算子**    | Conv1D / DeltaRule / SDPA / RoPE      |      130 | ★★★ 延迟关键路径                  |
+| **状态算子**    | KV-Cache                              |       17 | ★★★ 长上下文显存瓶颈                |
+| **胶水算子**    | Split / Reshape / Transpose           |       65 | ★ 融合进相邻 kernel              |
+| **前后处理**    | Gather / Concat / Sampler             |        3 | ★ 可忽略                       |
+| **合计**      |                                       | **1567** |                             |
 
 ---
 
@@ -213,22 +214,22 @@ Sampler (temp 1.0 / top_p 0.95 / top_k 20)
 
 ### 5.1 imatrix 信息
 
-| 项 | 值 |
-|---|---|
-| entry 数 | **496** |
-| 计算 chunks | 7（配置期望 100，实际校准集仅够 7 chunk） |
-| chunk size / ctx | 512 |
-| PPL | 24.4637 ± 3.02382 |
-| 路径 | `gguf/imatrix-UD-Qwen3.8-27B.gguf` |
+| 项                | 值                                  |
+| ---------------- | ---------------------------------- |
+| entry 数          | **496**                            |
+| 计算 chunks        | 7（配置期望 100，实际校准集仅够 7 chunk）        |
+| chunk size / ctx | 512                                |
+| PPL              | 24.4637 ± 3.02382                  |
+| 路径               | `gguf/imatrix-UD-Qwen3.8-27B.gguf` |
 
 ### 5.2 ⚠️ 10 个张量缺失 imatrix（重要质量风险）
 
 日志中 10 处 `did not find weights for X`，即**未使用 imatrix 加权，回退为标准量化**：
 
-| 张量 | 原因 |
-|---|---|
-| `token_embd.weight`、`output.weight` | llama.cpp imatrix 采集约定不覆盖 |
-| `blk.64.attn_q/k/v/output`、`blk.64.ffn_gate/up/down`、`blk.64.nextn.eh_proj` | **imatrix 计算时 MTP 块未启用** |
+| 张量                                                                          | 原因                        |
+| --------------------------------------------------------------------------- | ------------------------- |
+| `token_embd.weight`、`output.weight`                                         | llama.cpp imatrix 采集约定不覆盖 |
+| `blk.64.attn_q/k/v/output`、`blk.64.ffn_gate/up/down`、`blk.64.nextn.eh_proj` | **imatrix 计算时 MTP 块未启用**  |
 
 `imatrix_ud.log` 佐证：明确列出 `model has unused tensor blk.64.*`（15 条）。**MTP 草稿头（对投机解码加速比影响最大）恰好是量化质量最没保障的部分**，建议后续重跑 imatrix 时开启 nextn 层，或对 blk.64 单独走 Q5_K_M/Q6_K。
 
@@ -240,18 +241,20 @@ attn_qkv  q6_K: 0,1,2,4,5,6, 10,13,...,52, 56,57,58,60,61,62 (24个)
 attn_v    q6_K: 3,7,19,31,43,55,59,63,64      (9个)
 output    q6_K: 1个
 ```
+
 特征：**`ffn_down`、`attn_v`、`attn_qkv` 被识别为量化敏感张量提升至 Q6_K**，其余 439 个走 Q4_K。这是标准 Q4_K_M 混合精度策略，与日志中"没有使用 yaml 覆盖规则"互相印证。
 
 ### 5.4 量化过程引入的计算逻辑（**不属于模型推理算子**）
 
-| 量化期逻辑 | 说明 | 为何不是推理算子 |
-|---|---|---|
-| 张量类型分派（recipe） | 按张量名匹配 Q4_K/Q6_K | 编译期/离线决策 |
-| imatrix 加权误差最小化 | `Σ w_i·(x_i - x̂_i)²` 逐通道 importance 加权 | 离线校准 |
-| 块量化编码 | Q4_K 每 256 元素一块、含 `d`/`dmin` 两级 scale + 6-bit 子量化；Q6_K 每 256 元素 8-bit 子块 | 仅生成权重格式 |
-| 反量化 scale 存储 | 每块 scale/min 作为元数据落盘 | 推理期仅做 dequant，非独立算子 |
-| `did not find weights` 回退 | 无 imatrix 时的降级路径 | 量化期控制流 |
-| GGUF 重写 / 张量重排 | 输出文件 16021 MiB | I/O |
+| 量化期逻辑                     | 说明                                                                       | 为何不是推理算子            |
+| ------------------------- | ------------------------------------------------------------------------ | ------------------- |
+| 张量类型分派（recipe）            | 按张量名匹配 Q4_K/Q6_K                                                         | 编译期/离线决策            |
+| imatrix 加权误差最小化           | `Σ w_i·(x_i - x̂_i)²` 逐通道 importance 加权                                  | 离线校准                |
+| 块量化编码                     | Q4_K 每 256 元素一块、含 `d`/`dmin` 两级 scale + 6-bit 子量化；Q6_K 每 256 元素 8-bit 子块 | 仅生成权重格式             |
+| 反量化 scale 存储              | 每块 scale/min 作为元数据落盘                                                     | 推理期仅做 dequant，非独立算子 |
+| `did not find weights` 回退 | 无 imatrix 时的降级路径                                                         | 量化期控制流              |
+| GGUF 重写 / 张量重排            | 输出文件 16021 MiB                                                           | I/O                 |
+
 
 > **推理期唯一由量化引入的算子**：权重 **Dequant（反量化）**，通常已融合进 MatMul kernel（如 `ggml` 的 `dequantize_row_q4_K` 内联），不单独成节点。
 
