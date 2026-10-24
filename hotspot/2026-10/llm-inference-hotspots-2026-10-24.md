@@ -31,7 +31,7 @@
 **来源**
 - Release：https://github.com/NVIDIA/TensorRT-LLM/releases/tag/v1.4.0rc1 （2026-10-22T01:38:13Z，prerelease，发布说明 39,615 字符）
 
-**证据等级：** 官方一手（release 页面）。所有「新增/修复」条目均为发布说明口径，非独立 commit 祖先关系核验（rc1 为 prerelease，发布说明即权威来源）。
+**证据等级：** 官方一手（release 页面）。所有「新增/修复」条目均为发布说明口径；其中头号 BREAKING 项 **#17495（默认 KVCM V2 + Python transceiver）已通过 compare API 与 v1.4.0rc1 做 commit 祖先关系核验**：该 PR `merged_at=2026-10-12T07:03:41Z`，`compare/v1.4.0rc1...afc1fa27447464405e971b39ff3c7df63cc85e71` 返回 `status=behind, ahead_by=0, behind_by=189`，即 merge commit 为 rc1 的祖先，**确认已包含在 rc1 中**（其余条目仍仅发布说明级记录，rc1 为 prerelease）。
 
 ---
 
@@ -338,3 +338,5 @@
 ---
 
 > 归档说明：本档案为自动化每日追踪产出，覆盖 2026-10-23 UTC 窗口。相邻日期（2026-10-21、2026-10-22）未产生每日档案（自动化未执行），本目录不补写中间日期内容，各期仅按自身关注窗口采集。下一期（如执行）将覆盖 2026-10-24。
+
+> 复核说明（2026-10-24 二次核验）：本档案关注窗口（2026-10-23 UTC）提交计数经二次独立采集仍为 **vLLM 90 / SGLang 96 / TRT-LLM 52 / llama.cpp 21**（GitHub 历史提交不可变，与首采一致）；档案内关键 PR/发布页链接复核均返回 HTTP 200；首采遗留的「TRT-LLM v1.4.0rc1 BREAKING 仅发布说明级记录」已完成 **#17495 的 commit 祖先关系核验**（见第 1 节证据等级），确证该 BREAKING 默认变更已随 rc1 发布。
